@@ -16,47 +16,39 @@
   border-radius: var(--radius-sm);
   background: var(--bg-dark);
   overflow: hidden;
-  touch-action: none; /* Prevent scroll when dragging on iOS */
 }
 
-.time-input-field {
-  flex: 1;
-  min-width: 4rem;
-  padding: 0.5rem 0.75rem;
-  background: transparent;
-  border: none;
-  color: var(--text);
-  font-size: 1rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.time-input-field:focus {
-  outline: none;
-}
-
-.time-input-stepper {
+.time-input-segments {
   display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border);
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  gap: 0.125rem;
+  touch-action: none;
 }
 
-.time-input-btn {
-  flex: 1;
-  padding: 0.2rem 0.5rem;
+.time-input-segment {
+  padding: 0.4rem 0.5rem;
+  min-width: 2ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  color: var(--text);
   background: var(--bg-elevated);
-  border: none;
+  border-radius: var(--radius-sm);
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.time-input-segment:hover {
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg-elevated));
+}
+
+.time-input-segment-tenths {
+  min-width: 1ch;
+}
+
+.time-input-segment-sep {
   color: var(--text-muted);
-  font-size: 0.7rem;
-  cursor: pointer;
-  min-height: 18px;
-}
-
-.time-input-btn:hover:not(:disabled) {
-  background: var(--primary);
-  color: white;
-}
-
-.time-input-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  font-weight: 600;
+  padding: 0 0.125rem;
 }

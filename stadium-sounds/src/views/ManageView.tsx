@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppData } from '../context/AppDataContext'
 import { storeAudioFile, getStorageUsage, getAllStoredFiles, clearAllAudioFiles } from '../lib/audioStorage'
-import { previewPlay, getAudioDuration } from '../lib/audioService'
+import { previewPlay, getAudioDuration, subscribe, seekToFullPosition } from '../lib/audioService'
 import TimeInput from '../components/TimeInput'
 import ChooseAudioModal from '../components/ChooseAudioModal'
+import PreviewTimeBar from '../components/PreviewTimeBar'
 import type { Player, AudioAssignment, SoundEffectCategory, PurposeType, TeamType } from '../types'
 import './ManageView.css'
 
@@ -290,10 +291,19 @@ function AudioTab({
 
   const [storedFiles, setStoredFiles] = useState<{ path: string; fileName: string }[]>([])
   const importInputRef = useRef<HTMLInputElement>(null)
+  const [playbackPosition, setPlaybackPosition] = useState<number | null>(null)
 
   useEffect(() => {
     getAllStoredFiles().then(setStoredFiles)
   }, [assignments])
+
+  useEffect(() => {
+    const unsub = subscribe((state) => {
+      const isOurPreview = state.currentAssignment?.filePath === selectedFile
+      setPlaybackPosition(isOurPreview ? state.fullPosition : null)
+    })
+    return () => { unsub() }
+  }, [selectedFile])
 
   useEffect(() => {
     if (purpose === 'Sound Effect' && selectedFile) {
@@ -315,8 +325,8 @@ function AudioTab({
     if (!selectedFile) return
     const dur = fileDuration ?? 60
     setStartTime(0)
-    setDuration(Math.floor(dur))
-    setEndTime(Math.floor(dur))
+    setDuration(dur)
+    setEndTime(dur)
   }, [selectedFile, fileDuration])
 
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -470,6 +480,19 @@ function AudioTab({
             </select>
           </>
         )}
+        {selectedFile && fileDuration != null && fileDuration > 0 && (
+          <PreviewTimeBar
+            fileDuration={fileDuration}
+            startTime={startTime}
+            endTime={endTime}
+            currentPosition={playbackPosition}
+            onSeek={(seconds) => {
+              seekToFullPosition(seconds)
+              setStartTime(seconds)
+              setEndTime(seconds + duration)
+            }}
+          />
+        )}
         <div className="time-inputs-row">
           <TimeInput
             label="Start"
@@ -497,7 +520,7 @@ function AudioTab({
               setDuration(v)
               setEndTime(startTime + v)
             }}
-            min={1}
+            min={0.1}
             max={(fileDuration ?? 5999) - startTime}
           />
         </div>

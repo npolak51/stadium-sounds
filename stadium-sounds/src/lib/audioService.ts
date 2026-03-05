@@ -4,6 +4,7 @@ import { getAudioBlob } from './audioStorage'
 let currentAudio: HTMLAudioElement | null = null
 let currentAssignment: AudioAssignment | null = null
 let progressInterval: ReturnType<typeof setInterval> | null = null
+let stopFadeInterval: ReturnType<typeof setInterval> | null = null
 
 export type PlaybackState = {
   isPlaying: boolean
@@ -11,6 +12,10 @@ export type PlaybackState = {
   remainingTime: number
   progress: number
   currentAssignment: AudioAssignment | null
+  /** Full file duration in seconds (for preview scrubber) */
+  fullDuration: number
+  /** Current position in full file in seconds (for preview scrubber) */
+  fullPosition: number
 }
 
 type Listener = (state: PlaybackState) => void
@@ -23,18 +28,24 @@ function getState(): PlaybackState {
       currentTime: 0,
       remainingTime: 0,
       progress: 0,
-      currentAssignment: null
+      currentAssignment: null,
+      fullDuration: 0,
+      fullPosition: 0
     }
   }
   const elapsed = Math.max(0, currentAudio.currentTime - currentAssignment.startTime)
   const total = currentAssignment.endTime - currentAssignment.startTime
   const remaining = Math.max(0, total - elapsed)
+  const dur = currentAudio.duration
+  const pos = currentAudio.currentTime
   return {
     isPlaying: !currentAudio.paused,
     currentTime: elapsed,
     remainingTime: remaining,
     progress: total > 0 ? Math.min(1, elapsed / total) : 0,
-    currentAssignment
+    currentAssignment,
+    fullDuration: Number.isFinite(dur) ? dur : 0,
+    fullPosition: Number.isFinite(pos) ? pos : 0
   }
 }
 
@@ -50,6 +61,10 @@ export function subscribe(fn: Listener) {
 }
 
 function clearPlayback() {
+  if (stopFadeInterval) {
+    clearInterval(stopFadeInterval)
+    stopFadeInterval = null
+  }
   if (progressInterval) {
     clearInterval(progressInterval)
     progressInterval = null
@@ -64,7 +79,7 @@ function clearPlayback() {
 }
 
 export async function play(assignment: AudioAssignment): Promise<void> {
-  stop()
+  stop(true)
   const blob = await getAudioBlob(assignment.filePath)
   if (!blob) {
     throw new Error(`Audio file not found: ${assignment.fileName}`)
@@ -145,20 +160,29 @@ export function togglePlayPause() {
   }
 }
 
-export function stop() {
-  if (currentAudio && currentAssignment?.fadeOut) {
-    const fadeOut = () => {
-      currentAudio!.volume = Math.max(0, currentAudio!.volume - 0.1)
-      if (currentAudio!.volume > 0) {
-        requestAnimationFrame(fadeOut)
-      } else {
-        clearPlayback()
-      }
-    }
-    fadeOut()
-  } else {
+export function stop(immediate = false) {
+  if (!currentAudio) return
+  if (immediate) {
     clearPlayback()
+    return
   }
+  const audio = currentAudio
+  const startVolume = audio.volume
+  const fadeDuration = 1000 // ms
+  const steps = 20
+  const stepInterval = fadeDuration / steps
+  const volumeStep = startVolume / steps
+  let step = 0
+  if (stopFadeInterval) clearInterval(stopFadeInterval)
+  stopFadeInterval = setInterval(() => {
+    step++
+    audio.volume = Math.max(0, startVolume - volumeStep * step)
+    if (step >= steps) {
+      if (stopFadeInterval) clearInterval(stopFadeInterval)
+      stopFadeInterval = null
+      clearPlayback()
+    }
+  }, stepInterval)
 }
 
 export function seekTo(progress: number) {
@@ -168,13 +192,20 @@ export function seekTo(progress: number) {
   notify()
 }
 
+/** Seek to absolute position in the full file (seconds). Used for preview scrubber. */
+export function seekToFullPosition(seconds: number) {
+  if (!currentAudio) return
+  currentAudio.currentTime = Math.max(0, Math.min(seconds, currentAudio.duration || seconds))
+  notify()
+}
+
 /** Preview audio from a file path, start to end (in seconds). Stops any current playback. */
 export async function previewPlay(
   filePath: string,
   startTime: number,
   endTime: number
 ): Promise<void> {
-  stop()
+  stop(true)
   const blob = await getAudioBlob(filePath)
   if (!blob) throw new Error('Audio file not found')
   const url = URL.createObjectURL(blob)

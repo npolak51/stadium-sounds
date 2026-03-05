@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { getAllStoredFiles, storeAudioFile } from '../lib/audioStorage'
-import { previewPlay, getAudioDuration } from '../lib/audioService'
+import { previewPlay, getAudioDuration, subscribe, seekToFullPosition } from '../lib/audioService'
 import TimeInput from './TimeInput'
+import PreviewTimeBar from './PreviewTimeBar'
 import type { AudioAssignment } from '../types'
 import './ChooseAudioModal.css'
 
@@ -27,6 +28,15 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [fadeIn, setFadeIn] = useState(false)
   const [fadeOut, setFadeOut] = useState(false)
+  const [playbackPosition, setPlaybackPosition] = useState<number | null>(null)
+
+  useEffect(() => {
+    const unsub = subscribe((state) => {
+      const isOurPreview = state.currentAssignment?.filePath === selectedFile
+      setPlaybackPosition(isOurPreview ? state.fullPosition : null)
+    })
+    return () => { unsub() }
+  }, [selectedFile])
 
   const loadStoredFiles = () => {
     getAllStoredFiles().then(setStoredFiles)
@@ -62,11 +72,10 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
 
   useEffect(() => {
     if (!selectedFile) return
-    const dur = fileDuration ?? 60
     setStartTime(0)
-    setDuration(Math.floor(dur))
-    setEndTime(Math.floor(dur))
-  }, [selectedFile, fileDuration])
+    setDuration(12)
+    setEndTime(12)
+  }, [selectedFile])
 
   const handleSave = () => {
     if (!selectedFile) return
@@ -123,6 +132,19 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
         )}
         {selectedFile && (
           <>
+            {fileDuration != null && fileDuration > 0 && (
+              <PreviewTimeBar
+                fileDuration={fileDuration}
+                startTime={startTime}
+                endTime={endTime}
+                currentPosition={playbackPosition}
+                onSeek={(seconds) => {
+                  seekToFullPosition(seconds)
+                  setStartTime(seconds)
+                  setEndTime(seconds + duration)
+                }}
+              />
+            )}
             <div className="time-inputs-row">
               <TimeInput
                 label="Start"
@@ -150,7 +172,7 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
                   setDuration(v)
                   setEndTime(startTime + v)
                 }}
-                min={1}
+                min={0.1}
                 max={(fileDuration ?? 5999) - startTime}
               />
             </div>
