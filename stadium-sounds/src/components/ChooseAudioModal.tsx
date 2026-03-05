@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { getAllStoredFiles } from '../lib/audioStorage'
+import { useState, useEffect, useRef } from 'react'
+import { getAllStoredFiles, storeAudioFile } from '../lib/audioStorage'
 import { previewPlay, getAudioDuration } from '../lib/audioService'
 import TimeInput from './TimeInput'
 import type { AudioAssignment } from '../types'
@@ -13,11 +13,13 @@ interface ChooseAudioModalProps {
   playerId: string
   onSave: (assignment: AudioAssignment) => void
   onClose: () => void
+  onFilesChange?: () => void
 }
 
-export default function ChooseAudioModal({ playerId, onSave, onClose }: ChooseAudioModalProps) {
+export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesChange }: ChooseAudioModalProps) {
   const [storedFiles, setStoredFiles] = useState<{ path: string; fileName: string }[]>([])
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [startTime, setStartTime] = useState(0)
   const [endTime, setEndTime] = useState(12)
   const [duration, setDuration] = useState(12)
@@ -26,9 +28,29 @@ export default function ChooseAudioModal({ playerId, onSave, onClose }: ChooseAu
   const [fadeIn, setFadeIn] = useState(false)
   const [fadeOut, setFadeOut] = useState(false)
 
-  useEffect(() => {
+  const loadStoredFiles = () => {
     getAllStoredFiles().then(setStoredFiles)
+  }
+
+  useEffect(() => {
+    loadStoredFiles()
   }, [])
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files?.length) return
+    const file = files[0]
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    if (!['mp3', 'm4a', 'wav', 'aac', 'flac', 'ogg', 'mp4'].includes(ext || '')) return
+    const path = `${generateId()}_${file.name}`
+    const { stored } = await storeAudioFile(path, file, file.name)
+    if (stored) {
+      loadStoredFiles()
+      setSelectedFile(path)
+      onFilesChange?.()
+    }
+    e.target.value = ''
+  }
 
   useEffect(() => {
     if (!selectedFile) {
@@ -71,22 +93,34 @@ export default function ChooseAudioModal({ playerId, onSave, onClose }: ChooseAu
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal choose-audio-modal" onClick={e => e.stopPropagation()}>
         <h3>Choose Audio</h3>
-        <select
-          className="input"
-          value={selectedFile || ''}
-          onChange={e => setSelectedFile(e.target.value || null)}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".mp3,.m4a,.wav,.aac,.flac,.ogg,.mp4"
+          onChange={handleImportFile}
+          style={{ display: 'none' }}
+        />
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => fileInputRef.current?.click()}
         >
-          <option value="">Select file...</option>
-          {storedFiles.length === 0 ? (
-            <option disabled>Import files in Audio tab first</option>
-          ) : (
-            storedFiles.map(({ path, fileName }) => (
+          Import Audio File
+        </button>
+        {storedFiles.length > 0 && (
+          <select
+            className="input"
+            value={selectedFile || ''}
+            onChange={e => setSelectedFile(e.target.value || null)}
+          >
+            <option value="">Or select existing file...</option>
+            {storedFiles.map(({ path, fileName }) => (
               <option key={path} value={path}>
                 {fileName}
               </option>
-            ))
-          )}
-        </select>
+            ))}
+          </select>
+        )}
         {selectedFile && (
           <>
             <div className="time-inputs-row">

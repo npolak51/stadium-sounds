@@ -127,6 +127,7 @@ export default function ManageView() {
           playerId={chooseAudioPlayerId}
           onSave={handleSavePlayerAudio}
           onClose={() => setChooseAudioPlayerId(null)}
+          onFilesChange={loadStorageInfo}
         />
       )}
 
