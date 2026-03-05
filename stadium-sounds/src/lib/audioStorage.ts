@@ -4,22 +4,29 @@ import type { DBSchema, IDBPDatabase } from 'idb'
 
 interface AudioFilesDB extends DBSchema {
   files: {
-    key: string // filePath or blob key
-    value: { path: string; blob: Blob; fileName: string }
+    key: string
+    value: { path: string; blob: Blob; fileName: string; hash?: string }
+  }
+  hashes: {
+    key: string // SHA-256 hash
+    value: { hash: string; path: string }
   }
 }
 
 const AUDIO_DB_NAME = 'stadium-sounds-audio'
-const AUDIO_DB_VERSION = 1
+const AUDIO_DB_VERSION = 2
 
 let audioDbPromise: Promise<IDBPDatabase<AudioFilesDB>> | null = null
 
 function getAudioDB() {
   if (!audioDbPromise) {
     audioDbPromise = openDB<AudioFilesDB>(AUDIO_DB_NAME, AUDIO_DB_VERSION, {
-      upgrade(db) {
+      upgrade(db, _oldVersion, newVersion) {
         if (!db.objectStoreNames.contains('files')) {
           db.createObjectStore('files', { keyPath: 'path' })
+        }
+        if (newVersion === 2 && !db.objectStoreNames.contains('hashes')) {
+          db.createObjectStore('hashes', { keyPath: 'hash' })
         }
       }
     })
@@ -27,9 +34,30 @@ function getAudioDB() {
   return audioDbPromise
 }
 
-export async function storeAudioFile(path: string, blob: Blob, fileName: string): Promise<void> {
+async function computeFileHash(blob: Blob): Promise<string> {
+  const buffer = await blob.arrayBuffer()
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** Returns true if stored, false if skipped (duplicate) */
+export async function storeAudioFile(
+  path: string,
+  blob: Blob,
+  fileName: string
+): Promise<{ stored: boolean }> {
   const db = await getAudioDB()
-  await db.put('files', { path, blob, fileName })
+  const hash = await computeFileHash(blob)
+
+  const existing = await db.get('hashes', hash)
+  if (existing) {
+    return { stored: false }
+  }
+
+  await db.put('files', { path, blob, fileName, hash })
+  await db.put('hashes', { hash, path })
+  return { stored: true }
 }
 
 export async function getAudioBlob(path: string): Promise<Blob | null> {
@@ -40,6 +68,10 @@ export async function getAudioBlob(path: string): Promise<Blob | null> {
 
 export async function deleteAudioFile(path: string): Promise<void> {
   const db = await getAudioDB()
+  const record = await db.get('files', path)
+  if (record?.hash) {
+    await db.delete('hashes', record.hash)
+  }
   await db.delete('files', path)
 }
 

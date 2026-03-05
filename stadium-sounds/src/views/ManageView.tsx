@@ -4,7 +4,7 @@ import { storeAudioFile, getStorageUsage, getAllStoredFiles } from '../lib/audio
 import type { Player, AudioAssignment, SoundEffectCategory, PurposeType } from '../types'
 import './ManageView.css'
 
-type ManageTab = 'players' | 'audio' | 'files'
+type ManageTab = 'players' | 'audio'
 
 const SOUND_CATEGORIES: SoundEffectCategory[] = ['Pre/Postgame', 'Offense', 'Defense']
 
@@ -20,7 +20,6 @@ function formatBytes(bytes: number): string {
 
 export default function ManageView() {
   const [tab, setTab] = useState<ManageTab>('players')
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const {
     players,
@@ -40,6 +39,17 @@ export default function ManageView() {
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null)
 
   const [storageInfo, setStorageInfo] = useState<{ used: number; fileCount: number } | null>(null)
+  const [uploadFeedback, setUploadFeedback] = useState<{
+    uploaded: number
+    skipped: number
+  } | null>(null)
+
+  const showUploadFeedback = (uploaded: number, skipped: number) => {
+    if (uploaded > 0 || skipped > 0) {
+      setUploadFeedback({ uploaded, skipped })
+      setTimeout(() => setUploadFeedback(null), 4000)
+    }
+  }
 
   const loadStorageInfo = async () => {
     const info = await getStorageUsage()
@@ -64,29 +74,45 @@ export default function ManageView() {
     setNumber(p.number)
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files?.length) return
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop()?.toLowerCase()
-      if (!['mp3', 'm4a', 'wav', 'aac', 'flac', 'ogg', 'mp4'].includes(ext || '')) continue
-      const path = `${generateId()}_${file.name}`
-      await storeAudioFile(path, file, file.name)
-    }
-    loadStorageInfo()
-    e.target.value = ''
-  }
-
   return (
     <div className="manage-view">
+      {uploadFeedback && (
+        <div
+          className={`upload-toast ${
+            uploadFeedback.uploaded === 0 && uploadFeedback.skipped > 0
+              ? 'upload-toast-skipped'
+              : uploadFeedback.skipped > 0
+                ? 'upload-toast-mixed'
+                : ''
+          }`}
+          role="status"
+        >
+          <span className="upload-toast-icon">✓</span>
+          {uploadFeedback.uploaded > 0 && (
+            <span>
+              {uploadFeedback.uploaded === 1
+                ? '1 file uploaded'
+                : `${uploadFeedback.uploaded} files uploaded`}
+            </span>
+          )}
+          {uploadFeedback.uploaded > 0 && uploadFeedback.skipped > 0 && ' · '}
+          {uploadFeedback.skipped > 0 && (
+            <span>
+              {uploadFeedback.skipped === 1
+                ? '1 duplicate skipped'
+                : `${uploadFeedback.skipped} duplicates skipped`}
+            </span>
+          )}
+        </div>
+      )}
       <div className="manage-tabs">
-        {(['players', 'audio', 'files'] as const).map(t => (
+        {(['players', 'audio'] as const).map(t => (
           <button
             key={t}
             className={`manage-tab ${tab === t ? 'active' : ''}`}
             onClick={() => {
               setTab(t)
-              if (t === 'files') loadStorageInfo()
+              if (t === 'audio') loadStorageInfo()
             }}
           >
             {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -147,16 +173,10 @@ export default function ManageView() {
           removeAssignment={removeAssignment}
           setPlaylistOrder={setPlaylistOrder}
           onFilesChange={loadStorageInfo}
-        />
-      )}
-
-      {tab === 'files' && (
-        <FilesTab
+          onUploadComplete={showUploadFeedback}
           storageInfo={storageInfo}
           exportConfiguration={exportConfiguration}
           importConfiguration={importConfiguration}
-          fileInputRef={fileInputRef}
-          onFileSelect={handleFileUpload}
         />
       )}
     </div>
@@ -169,7 +189,11 @@ function AudioTab({
   addAssignment,
   removeAssignment,
   setPlaylistOrder,
-  onFilesChange
+  onFilesChange,
+  onUploadComplete,
+  storageInfo,
+  exportConfiguration,
+  importConfiguration
 }: {
   players: Player[]
   assignments: AudioAssignment[]
@@ -177,6 +201,10 @@ function AudioTab({
   removeAssignment: (a: AudioAssignment) => void
   setPlaylistOrder: (a: AudioAssignment) => void
   onFilesChange: () => void
+  onUploadComplete?: (uploaded: number, skipped: number) => void
+  storageInfo: { used: number; fileCount: number } | null
+  exportConfiguration: () => string
+  importConfiguration: (json: string) => void
 }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [purpose, setPurpose] = useState<PurposeType>('Player Music')
@@ -189,6 +217,7 @@ function AudioTab({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [storedFiles, setStoredFiles] = useState<{ path: string; fileName: string }[]>([])
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getAllStoredFiles().then(setStoredFiles)
@@ -197,12 +226,16 @@ function AudioTab({
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files?.length) return
+    let uploaded = 0
+    let skipped = 0
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop()?.toLowerCase()
       if (!['mp3', 'm4a', 'wav', 'aac', 'flac', 'ogg', 'mp4'].includes(ext || '')) continue
       const path = `${generateId()}_${file.name}`
-      await storeAudioFile(path, file, file.name)
+      const { stored } = await storeAudioFile(path, file, file.name)
+      stored ? uploaded++ : skipped++
     }
+    onUploadComplete?.(uploaded, skipped)
     getAllStoredFiles().then(setStoredFiles)
     onFilesChange()
     e.target.value = ''
@@ -236,9 +269,40 @@ function AudioTab({
     setEndTime(0)
   }
 
+  const handleExport = () => {
+    const json = exportConfiguration()
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `stadium-sounds-config-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        importConfiguration(reader.result as string)
+      } catch {
+        alert('Invalid configuration file')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
   return (
     <section className="manage-section">
       <h2>Audio Assignments</h2>
+      {storageInfo && (
+        <div className="storage-info">
+          Storage: {formatBytes(storageInfo.used)} · {storageInfo.fileCount} files
+        </div>
+      )}
       <input
         ref={fileInputRef}
         type="file"
@@ -322,85 +386,28 @@ function AudioTab({
           <p className="empty-hint">Create assignments above after importing audio files.</p>
         )}
       </div>
-    </section>
-  )
-}
 
-function FilesTab({
-  storageInfo,
-  exportConfiguration,
-  importConfiguration,
-  fileInputRef,
-  onFileSelect
-}: {
-  storageInfo: { used: number; fileCount: number } | null
-  exportConfiguration: () => string
-  importConfiguration: (json: string) => void
-  fileInputRef: React.RefObject<HTMLInputElement | null>
-  onFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void
-}) {
-  const importInputRef = useRef<HTMLInputElement>(null)
-
-  const handleExport = () => {
-    const json = exportConfiguration()
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `stadium-sounds-config-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        importConfiguration(reader.result as string)
-      } catch (err) {
-        alert('Invalid configuration file')
-      }
-    }
-    reader.readAsText(file)
-    e.target.value = ''
-  }
-
-  return (
-    <section className="manage-section">
-      <h2>Files & Storage</h2>
-      {storageInfo && (
-        <div className="storage-info">
-          <p>Storage used: {formatBytes(storageInfo.used)}</p>
-          <p>Files: {storageInfo.fileCount}</p>
+      <div className="backup-section">
+        <h3>Backup & Restore</h3>
+        <div className="backup-actions">
+          <button className="btn-primary" onClick={handleExport}>
+            Export Config
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleImport}
+            style={{ display: 'none' }}
+          />
+          <button
+            className="btn-secondary"
+            onClick={() => importInputRef.current?.click()}
+          >
+            Import Config
+          </button>
         </div>
-      )}
-      <div className="file-actions">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".mp3,.m4a,.wav,.aac,.flac,.ogg,.mp4"
-          multiple
-          onChange={onFileSelect}
-          style={{ display: 'none' }}
-        />
-        <button className="btn-primary" onClick={() => fileInputRef.current?.click()}>
-          Import Audio
-        </button>
-        <button className="btn-primary" onClick={handleExport}>
-          Export Config
-        </button>
-        <input
-          ref={importInputRef}
-          type="file"
-          accept=".json"
-          onChange={handleImport}
-          style={{ display: 'none' }}
-        />
-        <button className="btn-secondary" onClick={() => importInputRef.current?.click()}>
-          Import Config
-        </button>
+        <p className="hint">Export saves players, assignments, and playlists. Import restores them (audio files stay in storage).</p>
       </div>
     </section>
   )

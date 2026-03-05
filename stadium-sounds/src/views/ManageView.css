@@ -1,5 +1,44 @@
 .manage-view {
   max-width: 900px;
+  position: relative;
+}
+
+.upload-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--success);
+  color: var(--bg-dark);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  margin-bottom: 1rem;
+  animation: toastSlideIn 0.3s ease-out;
+}
+
+.upload-toast-icon {
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.upload-toast-mixed {
+  background: linear-gradient(90deg, var(--success) 0%, var(--accent) 100%);
+}
+
+.upload-toast-skipped {
+  background: var(--accent);
+  color: var(--bg-dark);
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .manage-tabs {
@@ -145,7 +184,30 @@
 
 .storage-info {
   margin-bottom: 1rem;
+  font-size: 0.9rem;
   color: var(--text-muted);
+}
+
+.backup-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.backup-section h3 {
+  margin-top: 0;
+}
+
+.backup-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.backup-section .hint {
+  margin-top: 0;
+  padding: 0;
 }
 
 .file-actions {
