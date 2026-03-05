@@ -1,0 +1,104 @@
+/* Stadium Sounds - Baseball stadium aesthetic */
+/* Dark navy base with warm accents, high contrast for tablet use */
+
+:root {
+  --bg-dark: #0d1b2a;
+  --bg-card: #1b2838;
+  --bg-elevated: #243447;
+  --primary: #2c9caf;
+  --primary-light: #70bdca;
+  --accent: #e07c3c;
+  --accent-soft: #f4a261;
+  --success: #2dc653;
+  --success-light: #52e875;
+  --danger: #ff1259;
+  --danger-hover: #ff3d7a;
+  --text: #e8eef4;
+  --text-muted: #8b9cad;
+  --border: #2d3e50;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.app {
+  min-height: 100vh;
+  background: var(--bg-dark);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  background: var(--bg-card);
+  border-bottom: 2px solid var(--border);
+  padding: 1rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.app-title {
+  font-family: 'Bebas Neue', 'Impact', sans-serif;
+  font-size: 1.75rem;
+  letter-spacing: 0.15em;
+  color: var(--primary-light);
+  margin: 0;
+}
+
+.app-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  background: var(--bg-elevated);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-btn:hover {
+  background: var(--bg-card);
+  color: var(--text);
+  border-color: var(--primary);
+}
+
+.nav-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary-light);
+}
+
+.nav-icon {
+  font-size: 1.1rem;
+}
+
+.app-main {
+  flex: 1;
+  overflow: auto;
+  padding: 1.5rem;
+}
+
+/* Utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
