@@ -72,11 +72,8 @@
   padding: 0.5rem 1.25rem;
 }
 
-.playback-btn.load-btn {
-  margin-left: auto;
-}
-
 .playback-btn.stop-btn {
+  margin-left: auto;
   background: var(--danger);
   border-color: var(--danger);
   color: white;

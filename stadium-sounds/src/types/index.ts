@@ -24,6 +24,7 @@ export interface AudioAssignment {
   fadeIn: boolean
   fadeOut: boolean
   soundEffectCategory?: SoundEffectCategory
+  soundEffectName?: string  // Custom display name for sound effects
   playlistOrder?: number
 }
 

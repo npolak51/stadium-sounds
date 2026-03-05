@@ -161,6 +161,13 @@
   gap: 0.5rem;
 }
 
+.time-inputs-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
 .assignments-list {
   margin-top: 1rem;
 }

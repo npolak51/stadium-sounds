@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppData } from '../context/AppDataContext'
 import { storeAudioFile, getStorageUsage, getAllStoredFiles } from '../lib/audioStorage'
+import { previewPlay, getAudioDuration } from '../lib/audioService'
+import TimeInput from '../components/TimeInput'
 import type { Player, AudioAssignment, SoundEffectCategory, PurposeType } from '../types'
 import './ManageView.css'
 
@@ -128,14 +130,21 @@ export default function ManageView() {
               type="text"
               placeholder="Name"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => {
+                const value = e.target.value
+                const capitalized = value.replace(/(^\w|\s\w)/g, c => c.toUpperCase())
+                setName(capitalized)
+              }}
               className="input"
+              autoCapitalize="words"
             />
             <input
               type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               placeholder="Jersey #"
               value={number}
-              onChange={e => setNumber(e.target.value)}
+              onChange={e => setNumber(e.target.value.replace(/\D/g, ''))}
               className="input"
             />
             <button
@@ -210,8 +219,12 @@ function AudioTab({
   const [purpose, setPurpose] = useState<PurposeType>('Player Music')
   const [playerId, setPlayerId] = useState('')
   const [soundCategory, setSoundCategory] = useState<SoundEffectCategory>('Pre/Postgame')
+  const [soundEffectName, setSoundEffectName] = useState('')
   const [startTime, setStartTime] = useState(0)
-  const [endTime, setEndTime] = useState(0)
+  const [endTime, setEndTime] = useState(12)
+  const [duration, setDuration] = useState(12)
+  const [fileDuration, setFileDuration] = useState<number | null>(null)
+  const [isPreviewing, setIsPreviewing] = useState(false)
   const [fadeIn, setFadeIn] = useState(false)
   const [fadeOut, setFadeOut] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -222,6 +235,36 @@ function AudioTab({
   useEffect(() => {
     getAllStoredFiles().then(setStoredFiles)
   }, [assignments])
+
+  useEffect(() => {
+    if (purpose === 'Sound Effect' && selectedFile) {
+      const fileInfo = storedFiles.find(f => f.path === selectedFile)
+      const baseName = fileInfo?.fileName?.replace(/\.[^/.]+$/, '') ?? selectedFile.split('_').slice(1).join('_').replace(/\.[^/.]+$/, '')
+      setSoundEffectName(baseName)
+    }
+  }, [purpose, selectedFile, storedFiles])
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setFileDuration(null)
+      return
+    }
+    getAudioDuration(selectedFile).then(setFileDuration)
+  }, [selectedFile])
+
+  useEffect(() => {
+    if (!selectedFile) return
+    if (purpose === 'Player Music') {
+      setStartTime(0)
+      setDuration(12)
+      setEndTime(12)
+    } else if (purpose === 'Sound Effect' || purpose === 'In-Game Playlist') {
+      const dur = fileDuration ?? 60
+      setStartTime(0)
+      setDuration(Math.floor(dur))
+      setEndTime(Math.floor(dur))
+    }
+  }, [purpose, selectedFile, fileDuration])
 
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -258,6 +301,7 @@ function AudioTab({
       fadeOut,
       player: purpose === 'Player Music' ? playerId || undefined : undefined,
       soundEffectCategory: purpose === 'Sound Effect' ? soundCategory : undefined,
+      soundEffectName: purpose === 'Sound Effect' ? soundEffectName.trim() || undefined : undefined,
       playlistOrder: purpose === 'In-Game Playlist' ? 0 : undefined
     }
     addAssignment(assignment)
@@ -265,8 +309,10 @@ function AudioTab({
       setPlaylistOrder(assignment)
     }
     setSelectedFile(null)
+    setSoundEffectName('')
     setStartTime(0)
-    setEndTime(0)
+    setEndTime(12)
+    setDuration(12)
   }
 
   const handleExport = () => {
@@ -347,18 +393,52 @@ function AudioTab({
           </select>
         )}
         {purpose === 'Sound Effect' && (
-          <select className="input" value={soundCategory} onChange={e => setSoundCategory(e.target.value as SoundEffectCategory)}>
-            {SOUND_CATEGORIES.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
+          <>
+            <input
+              type="text"
+              placeholder="Sound effect name"
+              value={soundEffectName}
+              onChange={e => setSoundEffectName(e.target.value)}
+              className="input"
+            />
+            <select className="input" value={soundCategory} onChange={e => setSoundCategory(e.target.value as SoundEffectCategory)}>
+              {SOUND_CATEGORIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </>
         )}
-        <label>
-          Start (sec): <input type="number" className="input small" value={startTime} onChange={e => setStartTime(parseFloat(e.target.value) || 0)} />
-        </label>
-        <label>
-          End (sec): <input type="number" className="input small" value={endTime} onChange={e => setEndTime(parseFloat(e.target.value) || 0)} />
-        </label>
+        <div className="time-inputs-row">
+          <TimeInput
+            label="Start"
+            value={startTime}
+            onChange={(v) => {
+              setStartTime(v)
+              setEndTime(v + duration)
+            }}
+            max={fileDuration ?? 5999}
+          />
+          <TimeInput
+            label="End"
+            value={endTime}
+            onChange={(v) => {
+              setEndTime(v)
+              setDuration(Math.max(0, v - startTime))
+            }}
+            min={startTime}
+            max={fileDuration ?? 5999}
+          />
+          <TimeInput
+            label="Duration"
+            value={duration}
+            onChange={(v) => {
+              setDuration(v)
+              setEndTime(startTime + v)
+            }}
+            min={1}
+            max={(fileDuration ?? 5999) - startTime}
+          />
+        </div>
         <label>
           <input type="checkbox" checked={fadeIn} onChange={e => setFadeIn(e.target.checked)} />
           Fade in
@@ -367,6 +447,24 @@ function AudioTab({
           <input type="checkbox" checked={fadeOut} onChange={e => setFadeOut(e.target.checked)} />
           Fade out
         </label>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={async () => {
+            if (!selectedFile) return
+            setIsPreviewing(true)
+            try {
+              await previewPlay(selectedFile, startTime, endTime)
+            } catch (e) {
+              console.error(e)
+            } finally {
+              setIsPreviewing(false)
+            }
+          }}
+          disabled={!selectedFile || isPreviewing}
+        >
+          {isPreviewing ? 'Playing…' : 'Preview Audio'}
+        </button>
         <button className="btn-primary" onClick={handleCreateAssignment} disabled={!selectedFile}>
           Add Assignment
         </button>
@@ -376,7 +474,11 @@ function AudioTab({
         <h3>Existing Assignments</h3>
         {assignments.map(a => (
           <div key={a.id} className="assignment-row">
-            <span>{a.fileName.replace(/\.[^/.]+$/, '')}</span>
+            <span>
+              {a.purpose === 'Sound Effect' && a.soundEffectName
+                ? a.soundEffectName
+                : a.fileName.replace(/\.[^/.]+$/, '')}
+            </span>
             <span className="purpose-badge">{a.purpose}</span>
             {a.player && <span>→ {players.find(p => p.id === a.player)?.name}</span>}
             <button className="btn-small danger" onClick={() => removeAssignment(a)}>Remove</button>

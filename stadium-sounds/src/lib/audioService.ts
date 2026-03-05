@@ -167,3 +167,65 @@ export function seekTo(progress: number) {
   currentAudio.currentTime = currentAssignment.startTime + progress * total
   notify()
 }
+
+/** Preview audio from a file path, start to end (in seconds). Stops any current playback. */
+export async function previewPlay(
+  filePath: string,
+  startTime: number,
+  endTime: number
+): Promise<void> {
+  stop()
+  const blob = await getAudioBlob(filePath)
+  if (!blob) throw new Error('Audio file not found')
+  const url = URL.createObjectURL(blob)
+  const audio = new Audio(url)
+  currentAudio = audio
+  currentAssignment = {
+    id: '',
+    fileName: '',
+    filePath,
+    purpose: 'Sound Effect',
+    startTime,
+    endTime,
+    duration: endTime - startTime,
+    fadeIn: false,
+    fadeOut: false
+  }
+
+  audio.currentTime = startTime
+  audio.volume = 1
+
+  const handleEnd = () => {
+    URL.revokeObjectURL(url)
+    clearPlayback()
+  }
+
+  audio.addEventListener('timeupdate', () => {
+    if (audio.currentTime >= endTime) {
+      audio.pause()
+      handleEnd()
+    }
+  })
+
+  await audio.play()
+  progressInterval = setInterval(notify, 100)
+  notify()
+}
+
+/** Get duration of an audio file in seconds */
+export async function getAudioDuration(filePath: string): Promise<number> {
+  const blob = await getAudioBlob(filePath)
+  if (!blob) return 0
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+    audio.addEventListener('loadedmetadata', () => {
+      resolve(audio.duration)
+      URL.revokeObjectURL(url)
+    })
+    audio.addEventListener('error', () => {
+      resolve(0)
+      URL.revokeObjectURL(url)
+    })
+  })
+}

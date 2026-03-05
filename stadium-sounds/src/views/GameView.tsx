@@ -160,9 +160,6 @@ export default function GameView() {
                 ⏭
               </button>
             )}
-            <button className="playback-btn load-btn" onClick={() => setShowLoadPlaylist(true)}>
-              Load
-            </button>
             <button className="playback-btn stop-btn" onClick={handleStop}>
               STOP
             </button>
@@ -222,7 +219,7 @@ export default function GameView() {
                   className={`sound-btn ${isActive ? 'active' : ''}`}
                   onClick={() => handlePlaySoundEffect(a)}
                 >
-                  {a.soundEffectCategory ? a.fileName.replace(/\.[^/.]+$/, '') : a.fileName}
+                  {a.soundEffectName || a.fileName.replace(/\.[^/.]+$/, '')}
                   {isActive && <span className="playing-indicator">♪</span>}
                 </button>
               )

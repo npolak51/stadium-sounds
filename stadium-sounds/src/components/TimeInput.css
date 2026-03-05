@@ -1,0 +1,61 @@
+.time-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.time-input-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.time-input {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-dark);
+  overflow: hidden;
+}
+
+.time-input-field {
+  flex: 1;
+  min-width: 4rem;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-input-field:focus {
+  outline: none;
+}
+
+.time-input-stepper {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+.time-input-btn {
+  flex: 1;
+  padding: 0.2rem 0.5rem;
+  background: var(--bg-elevated);
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  min-height: 18px;
+}
+
+.time-input-btn:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
+}
+
+.time-input-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

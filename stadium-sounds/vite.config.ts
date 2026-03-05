@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'app-icon.png'],
       manifest: {
         name: 'Stadium Sounds',
         short_name: 'StadiumSounds',
@@ -19,9 +19,15 @@ export default defineConfig({
         orientation: 'landscape',
         icons: [
           {
-            src: '/favicon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: '/app-icon.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/app-icon.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'any'
           }
         ]
