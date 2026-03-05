@@ -1,9 +1,12 @@
 // Data models matching the original StadiumSounds app structure
 
+export type TeamType = 'Varsity' | 'JV Blue' | 'JV Gold'
+
 export interface Player {
   id: string
   name: string
   number: string
+  team: TeamType
 }
 
 export type SoundEffectCategory = 'Pre/Postgame' | 'Offense' | 'Defense'

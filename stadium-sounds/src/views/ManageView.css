@@ -81,6 +81,38 @@
   margin: 1rem 0 0.5rem;
 }
 
+.players-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.players-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.players-table th,
+.players-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.players-table th {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.players-table .input {
+  width: 100%;
+  min-width: 0;
+}
+
+.players-table .input-small {
+  width: 4rem;
+}
+
 .player-form {
   display: flex;
   flex-wrap: wrap;

@@ -16,6 +16,7 @@
   border-radius: var(--radius-sm);
   background: var(--bg-dark);
   overflow: hidden;
+  touch-action: none; /* Prevent scroll when dragging on iOS */
 }
 
 .time-input-field {

@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import './TimeInput.css'
 
 function secondsToMMSS(sec: number): string {
@@ -26,6 +27,8 @@ interface TimeInputProps {
   label?: string
 }
 
+const DRAG_SENSITIVITY = 18 // pixels per step
+
 export default function TimeInput({
   value,
   onChange,
@@ -35,6 +38,30 @@ export default function TimeInput({
   label
 }: TimeInputProps) {
   const displayValue = secondsToMMSS(value)
+  const touchStartRef = useRef<{ y: number; value: number } | null>(null)
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartRef.current = {
+      y: e.touches[0].clientY,
+      value
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return
+    e.preventDefault()
+    const deltaY = touchStartRef.current.y - e.touches[0].clientY // up = positive
+    const steps = Math.round(deltaY / DRAG_SENSITIVITY)
+    if (steps !== 0) {
+      const newValue = Math.min(max, Math.max(min, touchStartRef.current.value + steps * step))
+      onChange(newValue)
+      touchStartRef.current = { y: e.touches[0].clientY, value: newValue }
+    }
+  }
+
+  const handleTouchEnd = () => {
+    touchStartRef.current = null
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const parsed = parseMMSS(e.target.value)
@@ -52,7 +79,12 @@ export default function TimeInput({
   return (
     <label className="time-input-wrap">
       {label && <span className="time-input-label">{label}</span>}
-      <div className="time-input">
+      <div
+        className="time-input"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         <input
           type="text"
           className="time-input-field"

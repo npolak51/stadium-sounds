@@ -7,15 +7,15 @@ import {
   useRef
 } from 'react'
 import type { ReactNode } from 'react'
-import type { Player, AudioAssignment, SavedPlaylist, AppConfiguration } from '../types'
+import type { Player, AudioAssignment, SavedPlaylist, AppConfiguration, TeamType } from '../types'
 import * as db from '../lib/db'
 
 interface AppDataContextValue {
   players: Player[]
   assignments: AudioAssignment[]
   savedPlaylists: SavedPlaylist[]
-  addPlayer: (name: string, number: string) => void
-  updatePlayer: (player: Player, name: string, number: string) => void
+  addPlayer: (name: string, number: string, team: TeamType) => void
+  updatePlayer: (player: Player, name: string, number: string, team: TeamType) => void
   removePlayer: (player: Player) => void
   addAssignment: (assignment: AudioAssignment) => void
   updateAssignment: (assignment: AudioAssignment) => void
@@ -52,7 +52,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       db.getAllAssignments(),
       db.getAllPlaylists()
     ])
-    setPlayers(p)
+    setPlayers(p.map(pr => ({ ...pr, team: pr.team ?? 'Varsity' })))
     setAssignments(a)
     setSavedPlaylists(pl)
   }, [])
@@ -77,18 +77,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [players, assignments, savedPlaylists, persist])
 
-  const addPlayer = useCallback((name: string, number: string) => {
-    setPlayers(prev => [...prev, { id: generateId(), name, number }])
+  const addPlayer = useCallback((name: string, number: string, team: TeamType = 'Varsity') => {
+    setPlayers(prev => [...prev, { id: generateId(), name, number, team }])
   }, [])
 
-  const updatePlayer = useCallback((player: Player, name: string, number: string) => {
+  const updatePlayer = useCallback((player: Player, name: string, number: string, team: TeamType) => {
     setPlayers(prev =>
-      prev.map(p => (p.id === player.id ? { ...p, name, number } : p))
+      prev.map(p => (p.id === player.id ? { ...p, name, number, team } : p))
     )
   }, [])
 
   const removePlayer = useCallback((player: Player) => {
     setPlayers(prev => prev.filter(p => p.id !== player.id))
+    setAssignments(prev => prev.filter(a => a.purpose !== 'Player Music' || a.player !== player.id))
   }, [])
 
   const addAssignment = useCallback((assignment: AudioAssignment) => {

@@ -3,12 +3,14 @@ import { useAppData } from '../context/AppDataContext'
 import { storeAudioFile, getStorageUsage, getAllStoredFiles } from '../lib/audioStorage'
 import { previewPlay, getAudioDuration } from '../lib/audioService'
 import TimeInput from '../components/TimeInput'
-import type { Player, AudioAssignment, SoundEffectCategory, PurposeType } from '../types'
+import ChooseAudioModal from '../components/ChooseAudioModal'
+import type { Player, AudioAssignment, SoundEffectCategory, PurposeType, TeamType } from '../types'
 import './ManageView.css'
 
 type ManageTab = 'players' | 'audio'
 
 const SOUND_CATEGORIES: SoundEffectCategory[] = ['Pre/Postgame', 'Offense', 'Defense']
+const TEAMS: TeamType[] = ['Varsity', 'JV Blue', 'JV Gold']
 
 function generateId() {
   return crypto.randomUUID()
@@ -36,9 +38,7 @@ export default function ManageView() {
     importConfiguration
   } = useAppData()
 
-  const [name, setName] = useState('')
-  const [number, setNumber] = useState('')
-  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null)
+  const [chooseAudioPlayerId, setChooseAudioPlayerId] = useState<string | null>(null)
 
   const [storageInfo, setStorageInfo] = useState<{ used: number; fileCount: number } | null>(null)
   const [uploadFeedback, setUploadFeedback] = useState<{
@@ -58,22 +58,11 @@ export default function ManageView() {
     setStorageInfo(info)
   }
 
-  const handleAddPlayer = () => {
-    if (!name.trim() || !number.trim()) return
-    if (editingPlayer) {
-      updatePlayer(editingPlayer, name.trim(), number.trim())
-      setEditingPlayer(null)
-    } else {
-      addPlayer(name.trim(), number.trim())
-    }
-    setName('')
-    setNumber('')
-  }
-
-  const handleEditPlayer = (p: Player) => {
-    setEditingPlayer(p)
-    setName(p.name)
-    setNumber(p.number)
+  const handleSavePlayerAudio = (assignment: AudioAssignment) => {
+    const existing = assignments.find(a => a.purpose === 'Player Music' && a.player === assignment.player)
+    if (existing) removeAssignment(existing)
+    addAssignment(assignment)
+    setChooseAudioPlayerId(null)
   }
 
   return (
@@ -123,60 +112,26 @@ export default function ManageView() {
       </div>
 
       {tab === 'players' && (
-        <section className="manage-section">
-          <h2>Players</h2>
-          <div className="player-form">
-            <input
-              type="text"
-              placeholder="Name"
-              value={name}
-              onChange={e => {
-                const value = e.target.value
-                const capitalized = value.replace(/(^\w|\s\w)/g, c => c.toUpperCase())
-                setName(capitalized)
-              }}
-              className="input"
-              autoCapitalize="words"
-            />
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="Jersey #"
-              value={number}
-              onChange={e => setNumber(e.target.value.replace(/\D/g, ''))}
-              className="input"
-            />
-            <button
-              className="btn-primary"
-              onClick={handleAddPlayer}
-              disabled={!name.trim() || !number.trim()}
-            >
-              {editingPlayer ? 'Update' : 'Add'} Player
-            </button>
-            {editingPlayer && (
-              <button className="btn-secondary" onClick={() => { setEditingPlayer(null); setName(''); setNumber('') }}>
-                Cancel
-              </button>
-            )}
-          </div>
-          <ul className="player-list">
-            {players.map(p => (
-              <li key={p.id} className="player-row">
-                <span>#{p.number} {p.name}</span>
-                <div>
-                  <button className="btn-small" onClick={() => handleEditPlayer(p)}>Edit</button>
-                  <button className="btn-small danger" onClick={() => removePlayer(p)}>Delete</button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <PlayersTab
+          players={players}
+          assignments={assignments}
+          addPlayer={addPlayer}
+          updatePlayer={updatePlayer}
+          removePlayer={removePlayer}
+          onChooseAudio={setChooseAudioPlayerId}
+        />
+      )}
+
+      {chooseAudioPlayerId && (
+        <ChooseAudioModal
+          playerId={chooseAudioPlayerId}
+          onSave={handleSavePlayerAudio}
+          onClose={() => setChooseAudioPlayerId(null)}
+        />
       )}
 
       {tab === 'audio' && (
         <AudioTab
-          players={players}
           assignments={assignments}
           addAssignment={addAssignment}
           removeAssignment={removeAssignment}
@@ -192,8 +147,113 @@ export default function ManageView() {
   )
 }
 
-function AudioTab({
+function PlayersTab({
   players,
+  assignments,
+  addPlayer,
+  updatePlayer,
+  removePlayer,
+  onChooseAudio
+}: {
+  players: Player[]
+  assignments: AudioAssignment[]
+  addPlayer: (name: string, number: string, team: TeamType) => void
+  updatePlayer: (player: Player, name: string, number: string, team: TeamType) => void
+  removePlayer: (player: Player) => void
+  onChooseAudio: (playerId: string) => void
+}) {
+  const playerMusic = assignments.filter(a => a.purpose === 'Player Music')
+
+  return (
+    <section className="manage-section">
+      <h2>Players</h2>
+      <div className="players-table-wrap">
+        <table className="players-table">
+          <thead>
+            <tr>
+              <th>Jersey #</th>
+              <th>Name</th>
+              <th>Team</th>
+              <th>Choose Audio</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {players.map(p => {
+              const assignment = playerMusic.find(a => a.player === p.id)
+              return (
+                <tr key={p.id}>
+                  <td>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      className="input input-small"
+                      value={p.number}
+                      onChange={e => updatePlayer(p, p.name, e.target.value.replace(/\D/g, ''), p.team)}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="text"
+                      className="input"
+                      value={p.name}
+                      onChange={e => {
+                        const value = e.target.value
+                        const capitalized = value.replace(/(^\w|\s\w)/g, (c: string) => c.toUpperCase())
+                        updatePlayer(p, capitalized, p.number, p.team)
+                      }}
+                      autoCapitalize="words"
+                    />
+                  </td>
+                  <td>
+                    <select
+                      className="input"
+                      value={p.team}
+                      onChange={e => updatePlayer(p, p.name, p.number, e.target.value as TeamType)}
+                    >
+                      {TEAMS.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className={assignment ? 'btn-primary btn-small' : 'btn-secondary btn-small'}
+                      onClick={() => onChooseAudio(p.id)}
+                    >
+                      {assignment ? assignment.fileName.replace(/\.[^/.]+$/, '') : 'Choose Audio'}
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn-small danger"
+                      onClick={() => removePlayer(p)}
+                      aria-label="Delete"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <button
+        type="button"
+        className="btn-primary"
+        onClick={() => addPlayer('', '', 'Varsity')}
+      >
+        Add Player
+      </button>
+    </section>
+  )
+}
+
+function AudioTab({
   assignments,
   addAssignment,
   removeAssignment,
@@ -204,7 +264,6 @@ function AudioTab({
   exportConfiguration,
   importConfiguration
 }: {
-  players: Player[]
   assignments: AudioAssignment[]
   addAssignment: (a: AudioAssignment) => void
   removeAssignment: (a: AudioAssignment) => void
@@ -216,8 +275,7 @@ function AudioTab({
   importConfiguration: (json: string) => void
 }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [purpose, setPurpose] = useState<PurposeType>('Player Music')
-  const [playerId, setPlayerId] = useState('')
+  const [purpose, setPurpose] = useState<PurposeType>('Sound Effect')
   const [soundCategory, setSoundCategory] = useState<SoundEffectCategory>('Pre/Postgame')
   const [soundEffectName, setSoundEffectName] = useState('')
   const [startTime, setStartTime] = useState(0)
@@ -254,17 +312,11 @@ function AudioTab({
 
   useEffect(() => {
     if (!selectedFile) return
-    if (purpose === 'Player Music') {
-      setStartTime(0)
-      setDuration(12)
-      setEndTime(12)
-    } else if (purpose === 'Sound Effect' || purpose === 'In-Game Playlist') {
-      const dur = fileDuration ?? 60
-      setStartTime(0)
-      setDuration(Math.floor(dur))
-      setEndTime(Math.floor(dur))
-    }
-  }, [purpose, selectedFile, fileDuration])
+    const dur = fileDuration ?? 60
+    setStartTime(0)
+    setDuration(Math.floor(dur))
+    setEndTime(Math.floor(dur))
+  }, [selectedFile, fileDuration])
 
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -299,15 +351,13 @@ function AudioTab({
       duration: end - startTime,
       fadeIn,
       fadeOut,
-      player: purpose === 'Player Music' ? playerId || undefined : undefined,
+      player: undefined,
       soundEffectCategory: purpose === 'Sound Effect' ? soundCategory : undefined,
       soundEffectName: purpose === 'Sound Effect' ? soundEffectName.trim() || undefined : undefined,
       playlistOrder: purpose === 'In-Game Playlist' ? 0 : undefined
     }
     addAssignment(assignment)
-    if (purpose === 'In-Game Playlist') {
-      setPlaylistOrder(assignment)
-    }
+    if (purpose === 'In-Game Playlist') setPlaylistOrder(assignment)
     setSelectedFile(null)
     setSoundEffectName('')
     setStartTime(0)
@@ -380,18 +430,9 @@ function AudioTab({
           )}
         </select>
         <select className="input" value={purpose} onChange={e => setPurpose(e.target.value as PurposeType)}>
-          <option value="Player Music">Player Music</option>
           <option value="Sound Effect">Sound Effect</option>
           <option value="In-Game Playlist">In-Game Playlist</option>
         </select>
-        {purpose === 'Player Music' && (
-          <select className="input" value={playerId} onChange={e => setPlayerId(e.target.value)}>
-            <option value="">Select player...</option>
-            {players.map(p => (
-              <option key={p.id} value={p.id}>#{p.number} {p.name}</option>
-            ))}
-          </select>
-        )}
         {purpose === 'Sound Effect' && (
           <>
             <input
@@ -472,19 +513,20 @@ function AudioTab({
 
       <div className="assignments-list">
         <h3>Existing Assignments</h3>
-        {assignments.map(a => (
-          <div key={a.id} className="assignment-row">
-            <span>
-              {a.purpose === 'Sound Effect' && a.soundEffectName
-                ? a.soundEffectName
-                : a.fileName.replace(/\.[^/.]+$/, '')}
-            </span>
-            <span className="purpose-badge">{a.purpose}</span>
-            {a.player && <span>→ {players.find(p => p.id === a.player)?.name}</span>}
-            <button className="btn-small danger" onClick={() => removeAssignment(a)}>Remove</button>
-          </div>
-        ))}
-        {assignments.length === 0 && (
+        {assignments
+          .filter(a => a.purpose !== 'Player Music')
+          .map(a => (
+            <div key={a.id} className="assignment-row">
+              <span>
+                {a.purpose === 'Sound Effect' && a.soundEffectName
+                  ? a.soundEffectName
+                  : a.fileName.replace(/\.[^/.]+$/, '')}
+              </span>
+              <span className="purpose-badge">{a.purpose}</span>
+              <button className="btn-small danger" onClick={() => removeAssignment(a)}>Remove</button>
+            </div>
+          ))}
+        {assignments.filter(a => a.purpose !== 'Player Music').length === 0 && (
           <p className="empty-hint">Create assignments above after importing audio files.</p>
         )}
       </div>
