@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppData } from '../context/AppDataContext'
-import { storeAudioFile, getStorageUsage, getAllStoredFiles } from '../lib/audioStorage'
+import { storeAudioFile, getStorageUsage, getAllStoredFiles, clearAllAudioFiles } from '../lib/audioStorage'
 import { previewPlay, getAudioDuration } from '../lib/audioService'
 import TimeInput from '../components/TimeInput'
 import ChooseAudioModal from '../components/ChooseAudioModal'
@@ -391,6 +391,18 @@ function AudioTab({
     e.target.value = ''
   }
 
+  const handleClearAll = async () => {
+    if (!confirm('Are you sure? This will permanently delete all audio files and remove all assignments (Sound Effects, Playlist, and Player Music).')) return
+    for (const a of assignments) {
+      removeAssignment(a)
+    }
+    await clearAllAudioFiles()
+    setStoredFiles([])
+    setSelectedFile(null)
+    setSoundEffectName('')
+    onFilesChange()
+  }
+
   return (
     <section className="manage-section">
       <h2>Audio Assignments</h2>
@@ -409,6 +421,14 @@ function AudioTab({
       />
       <button className="btn-primary" onClick={() => fileInputRef.current?.click()}>
         Import Audio Files
+      </button>
+      <button
+        type="button"
+        className="btn-secondary danger"
+        onClick={handleClearAll}
+        disabled={!storedFiles.length}
+      >
+        Clear All Audio Files
       </button>
 
       <div className="assignment-form">

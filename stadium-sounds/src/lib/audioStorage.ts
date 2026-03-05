@@ -93,3 +93,14 @@ export async function getAllStoredFiles(): Promise<{ path: string; fileName: str
   const records = await db.getAll('files')
   return records.map(r => ({ path: r.path, fileName: r.fileName }))
 }
+
+/** Deletes all audio files from storage. Caller should also remove assignments. */
+export async function clearAllAudioFiles(): Promise<void> {
+  const db = await getAudioDB()
+  const tx = db.transaction(['files', 'hashes'], 'readwrite')
+  await Promise.all([
+    tx.objectStore('files').clear(),
+    tx.objectStore('hashes').clear()
+  ])
+  await tx.done
+}

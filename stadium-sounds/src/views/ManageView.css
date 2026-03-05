@@ -173,6 +173,16 @@
   color: white;
 }
 
+.btn-secondary.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn-secondary.danger:hover {
+  background: var(--danger);
+  color: white;
+}
+
 .assignment-form {
   background: var(--bg-elevated);
   border-radius: var(--radius-sm);
