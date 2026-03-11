@@ -10,7 +10,9 @@ import {
 } from '../lib/audioService'
 import type { Player, AudioAssignment, SavedPlaylist } from '../types'
 import './GameView.css'
-import type { SoundEffectCategory } from '../types'
+import type { SoundEffectCategory, TeamType } from '../types'
+
+const TEAMS: TeamType[] = ['Varsity', 'JV Blue', 'JV Gold']
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -32,6 +34,7 @@ export default function GameView() {
   const [currentPlayingSoundEffectId, setCurrentPlayingSoundEffectId] = useState<string | null>(null)
   const [currentPlayingPlaylistId, setCurrentPlayingPlaylistId] = useState<string | null>(null)
   const [selectedSoundCategory, setSelectedSoundCategory] = useState<SoundEffectCategory>('Pre/Postgame')
+  const [selectedTeam, setSelectedTeam] = useState<TeamType>('Varsity')
   const [shuffleEnabled, setShuffleEnabled] = useState(false)
   const [repeatMode, setRepeatMode] = useState<'None' | 'All' | 'One'>('None')
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0)
@@ -45,6 +48,10 @@ export default function GameView() {
 
   const soundEffectsByCategory = soundEffects.filter(
     a => a.soundEffectCategory === selectedSoundCategory
+  )
+
+  const playersForTeam = players.filter(
+    p => p.team === selectedTeam && playerMusic.some(a => a.player === p.id)
   )
 
   useEffect(() => {
@@ -171,10 +178,19 @@ export default function GameView() {
         {/* Player lineup */}
         <section className="game-section">
           <h2 className="section-title">Player Music</h2>
+          <div className="sound-category-tabs">
+            {TEAMS.map(team => (
+              <button
+                key={team}
+                className={`cat-tab ${selectedTeam === team ? 'active' : ''}`}
+                onClick={() => setSelectedTeam(team)}
+              >
+                {team}
+              </button>
+            ))}
+          </div>
           <div className="player-list">
-            {players
-              .filter(p => playerMusic.some(a => a.player === p.id))
-              .map(player => {
+            {playersForTeam.map(player => {
                 const assignment = playerMusic.find(a => a.player === player.id)
                 const isActive = currentPlayingPlayerId === player.id
                 return (
@@ -190,7 +206,7 @@ export default function GameView() {
                   </button>
                 )
               })}
-            {players.filter(p => playerMusic.some(a => a.player === p.id)).length === 0 && (
+            {playersForTeam.length === 0 && (
               <p className="empty-hint">Add players and assign music in Manage</p>
             )}
           </div>
