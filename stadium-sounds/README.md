@@ -48,6 +48,13 @@ npm run preview  # Preview production build
 2. Use "Add to Home Screen" or the install prompt
 3. The app runs standalone and works offline
 
+## iPad / iOS Compatibility
+
+- **Recommended**: iPad with iOS 14+ and Safari 14+
+- The Game tab preloads audio before enabling play buttons to satisfy iOS Safari’s requirement that `audio.play()` run within a user gesture
+- If you see "Preparing audio…" on the Game tab, wait for it to finish before tapping play
+- Manage → Preview Audio and Playlists → Load work because they preload the relevant files before playback
+
 ## Data & Backup
 
 - All data (players, assignments, playlists) is stored in IndexedDB

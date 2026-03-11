@@ -4,6 +4,7 @@ import {
   subscribe,
   play,
   stop,
+  preloadBlobs,
   togglePlayPause,
   seekTo,
   type PlaybackState
@@ -39,6 +40,7 @@ export default function GameView() {
   const [repeatMode, setRepeatMode] = useState<'None' | 'All' | 'One'>('None')
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0)
   const [showLoadPlaylist, setShowLoadPlaylist] = useState(false)
+  const [preloadReady, setPreloadReady] = useState(false)
 
   const playerMusic = assignments.filter(a => a.purpose === 'Player Music')
   const soundEffects = assignments.filter(a => a.purpose === 'Sound Effect')
@@ -58,6 +60,24 @@ export default function GameView() {
     const unsub = subscribe(setPlaybackState)
     return () => { unsub() }
   }, [])
+
+  const playablePaths = assignments
+    .filter(
+      a => a.purpose === 'Player Music' || a.purpose === 'Sound Effect' || a.purpose === 'In-Game Playlist'
+    )
+    .map(a => a.filePath)
+    .filter(Boolean)
+
+  // Preload audio blobs before enabling play. Required for iPad: play() must run synchronously
+  // within user gesture; async blob fetch from IndexedDB breaks the gesture chain.
+  useEffect(() => {
+    if (playablePaths.length === 0) {
+      setPreloadReady(true)
+      return
+    }
+    setPreloadReady(false)
+    preloadBlobs(playablePaths).then(() => setPreloadReady(true))
+  }, [assignments])
 
   const [playError, setPlayError] = useState<string | null>(null)
 
@@ -186,7 +206,12 @@ export default function GameView() {
         </div>
       )}
 
-      <div className="game-grid">
+      {playablePaths.length > 0 && !preloadReady && (
+        <div className="preload-overlay" role="status" aria-live="polite">
+          Preparing audio…
+        </div>
+      )}
+      <div className={`game-grid ${!preloadReady ? 'preload-pending' : ''}`}>
         {/* Player lineup */}
         <section className="game-section">
           <h2 className="section-title">Player Music</h2>
@@ -210,7 +235,7 @@ export default function GameView() {
                     key={player.id}
                     className={`player-btn ${isActive ? 'active' : ''}`}
                     onClick={() => handlePlayPlayer(player)}
-                    disabled={!assignment}
+                    disabled={!assignment || !preloadReady}
                   >
                     <span className="player-number">#{player.number}</span>
                     <span className="player-name">{player.name}</span>
@@ -246,6 +271,7 @@ export default function GameView() {
                   key={a.id}
                   className={`sound-btn ${isActive ? 'active' : ''}`}
                   onClick={() => handlePlaySoundEffect(a)}
+                  disabled={!preloadReady}
                 >
                   {a.soundEffectName || a.fileName.replace(/\.[^/.]+$/, '')}
                   {isActive && <span className="playing-indicator">♪</span>}
@@ -298,6 +324,7 @@ export default function GameView() {
                   setCurrentPlaylistIndex(i)
                   handlePlayPlaylistSong(i)
                 }}
+                disabled={!preloadReady}
               >
                 <span className="track-num">{i + 1}</span>
                 <span className="track-name">{item.fileName.replace(/\.[^/.]+$/, '')}</span>

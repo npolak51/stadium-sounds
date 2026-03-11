@@ -9,9 +9,10 @@ export function clearBlobCache(): void {
   blobCache.clear()
 }
 
-/** Pre-load blobs for given paths. Call when Game view mounts so play() can use cache synchronously on tap. */
+/** Pre-load blobs for given paths. Call when Game view mounts so play() can use cache synchronously on tap.
+ * Returns true when all paths are cached (required for iPad - play() must run sync within user gesture). */
 export async function preloadBlobs(paths: string[]): Promise<void> {
-  const unique = [...new Set(paths)]
+  const unique = [...new Set(paths)].filter(Boolean)
   await Promise.all(
     unique.map(async (path) => {
       if (blobCache.has(path)) return
@@ -19,6 +20,11 @@ export async function preloadBlobs(paths: string[]): Promise<void> {
       if (blob) blobCache.set(path, blob)
     })
   )
+}
+
+/** Check if a path is already in the blob cache (for sync play on iOS). */
+export function isBlobCached(path: string): boolean {
+  return blobCache.has(path)
 }
 
 function getBlobForPlay(path: string): Blob | null {
