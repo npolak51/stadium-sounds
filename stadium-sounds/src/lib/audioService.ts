@@ -1,6 +1,30 @@
 import type { AudioAssignment } from '../types'
 import { getAudioBlob } from './audioStorage'
 
+/** In-memory cache for pre-loaded blobs. Avoids async load on play(), which breaks iOS user-gesture requirement. */
+const blobCache = new Map<string, Blob>()
+
+/** Clear the blob cache (e.g. when user clears all audio files). */
+export function clearBlobCache(): void {
+  blobCache.clear()
+}
+
+/** Pre-load blobs for given paths. Call when Game view mounts so play() can use cache synchronously on tap. */
+export async function preloadBlobs(paths: string[]): Promise<void> {
+  const unique = [...new Set(paths)]
+  await Promise.all(
+    unique.map(async (path) => {
+      if (blobCache.has(path)) return
+      const blob = await getAudioBlob(path)
+      if (blob) blobCache.set(path, blob)
+    })
+  )
+}
+
+function getBlobForPlay(path: string): Blob | null {
+  return blobCache.get(path) ?? null
+}
+
 let currentAudio: HTMLAudioElement | null = null
 let currentAssignment: AudioAssignment | null = null
 let progressInterval: ReturnType<typeof setInterval> | null = null
@@ -80,7 +104,11 @@ function clearPlayback() {
 
 export async function play(assignment: AudioAssignment): Promise<void> {
   stop(true)
-  const blob = await getAudioBlob(assignment.filePath)
+  let blob = getBlobForPlay(assignment.filePath)
+  if (!blob) {
+    blob = await getAudioBlob(assignment.filePath) ?? null
+    if (blob) blobCache.set(assignment.filePath, blob)
+  }
   if (!blob) {
     throw new Error(`Audio file not found: ${assignment.fileName}`)
   }
@@ -127,7 +155,14 @@ export async function play(assignment: AudioAssignment): Promise<void> {
     }
   })
 
-  await audio.play()
+  try {
+    await audio.play()
+  } catch (e) {
+    clearPlayback()
+    throw new Error(
+      'Playback was blocked. On iPad/iPhone, tap the item again to play, or ensure audio is unlocked.'
+    )
+  }
   progressInterval = setInterval(notify, 100)
   notify()
 }
@@ -206,7 +241,11 @@ export async function previewPlay(
   endTime: number
 ): Promise<void> {
   stop(true)
-  const blob = await getAudioBlob(filePath)
+  let blob = getBlobForPlay(filePath)
+  if (!blob) {
+    blob = await getAudioBlob(filePath) ?? null
+    if (blob) blobCache.set(filePath, blob)
+  }
   if (!blob) throw new Error('Audio file not found')
   const url = URL.createObjectURL(blob)
   const audio = new Audio(url)
@@ -238,7 +277,14 @@ export async function previewPlay(
     }
   })
 
-  await audio.play()
+  try {
+    await audio.play()
+  } catch (e) {
+    clearPlayback()
+    throw new Error(
+      'Preview was blocked. On iPad/iPhone, tap Preview again to play.'
+    )
+  }
   progressInterval = setInterval(notify, 100)
   notify()
 }

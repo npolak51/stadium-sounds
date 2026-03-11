@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppData } from '../context/AppDataContext'
 import { storeAudioFile, getStorageUsage, getAllStoredFiles, clearAllAudioFiles } from '../lib/audioStorage'
-import { previewPlay, getAudioDuration, subscribe, seekToFullPosition } from '../lib/audioService'
+import { previewPlay, getAudioDuration, subscribe, seekToFullPosition, preloadBlobs, clearBlobCache } from '../lib/audioService'
 import TimeInput from '../components/TimeInput'
 import ChooseAudioModal from '../components/ChooseAudioModal'
 import PreviewTimeBar from '../components/PreviewTimeBar'
@@ -319,6 +319,7 @@ function AudioTab({
       return
     }
     getAudioDuration(selectedFile).then(setFileDuration)
+    preloadBlobs([selectedFile])
   }, [selectedFile])
 
   useEffect(() => {
@@ -407,6 +408,7 @@ function AudioTab({
     for (const a of assignments) {
       removeAssignment(a)
     }
+    clearBlobCache()
     await clearAllAudioFiles()
     setStoredFiles([])
     setSelectedFile(null)

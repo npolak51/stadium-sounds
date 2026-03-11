@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { getAllStoredFiles, storeAudioFile } from '../lib/audioStorage'
-import { previewPlay, getAudioDuration, subscribe, seekToFullPosition } from '../lib/audioService'
+import { previewPlay, getAudioDuration, subscribe, seekToFullPosition, preloadBlobs } from '../lib/audioService'
 import TimeInput from './TimeInput'
 import PreviewTimeBar from './PreviewTimeBar'
 import type { AudioAssignment } from '../types'
@@ -68,6 +68,7 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
       return
     }
     getAudioDuration(selectedFile).then(setFileDuration)
+    preloadBlobs([selectedFile])
   }, [selectedFile])
 
   useEffect(() => {

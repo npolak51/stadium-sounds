@@ -59,7 +59,10 @@ export default function GameView() {
     return () => { unsub() }
   }, [])
 
+  const [playError, setPlayError] = useState<string | null>(null)
+
   const playAssignment = useCallback(async (a: AudioAssignment) => {
+    setPlayError(null)
     try {
       await play(a)
       if (a.purpose === 'Player Music') {
@@ -77,6 +80,7 @@ export default function GameView() {
       }
     } catch (e) {
       console.error(e)
+      setPlayError(e instanceof Error ? e.message : 'Playback failed')
     }
   }, [])
 
@@ -117,6 +121,14 @@ export default function GameView() {
 
   return (
     <div className="game-view">
+      {playError && (
+        <div className="play-error-toast" role="alert">
+          {playError}
+          <button type="button" onClick={() => setPlayError(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
       {/* Playback controls - show when something is playing */}
       {(playbackState?.currentAssignment || playbackState?.isPlaying) && (
         <div className="playback-bar">
