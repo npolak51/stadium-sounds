@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 import './TimeInput.css'
 
 function secondsToParts(sec: number): { minutes: number; seconds: number; tenths: number } {
@@ -72,11 +72,12 @@ function SegmentWheel({
       onWheel(segment)(e as unknown as React.WheelEvent<HTMLDivElement>)
       e.preventDefault()
     }
-    el.addEventListener('touchstart', handleTouchStart, { passive: false })
-    el.addEventListener('touchmove', handleTouchMove, { passive: false })
-    el.addEventListener('touchend', handleTouchEnd)
-    el.addEventListener('touchcancel', handleTouchEnd)
-    el.addEventListener('wheel', handleWheel, { passive: false })
+    const opts = { passive: false }
+    el.addEventListener('touchstart', handleTouchStart, opts)
+    el.addEventListener('touchmove', handleTouchMove, opts)
+    el.addEventListener('touchend', handleTouchEnd, opts)
+    el.addEventListener('touchcancel', handleTouchEnd, opts)
+    el.addEventListener('wheel', handleWheel, opts)
     return () => {
       el.removeEventListener('touchstart', handleTouchStart)
       el.removeEventListener('touchmove', handleTouchMove)
@@ -131,6 +132,12 @@ export default function TimeInput({
     segment: Segment
     value: number
   } | null>(null)
+  const valueRef = useRef(value)
+  const onChangeRef = useRef(onChange)
+  const minMaxRef = useRef({ min: min ?? 0, max: max ?? 5999 })
+  valueRef.current = value
+  onChangeRef.current = onChange
+  minMaxRef.current = { min: min ?? 0, max: max ?? 5999 }
 
   const maxMinutes = Math.floor(max / 60)
 
@@ -175,35 +182,63 @@ export default function TimeInput({
     touchStartRef.current = null
   }
 
-  const handleTouchStart = (segment: Segment) => (e: React.TouchEvent) => {
+  const handleTouchStart = useCallback((segment: Segment) => (e: React.TouchEvent) => {
     touchStartRef.current = {
       y: e.touches[0].clientY,
       segment,
       value
     }
-  }
+  }, [])
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!touchStartRef.current) return
     e.preventDefault()
     const deltaY = touchStartRef.current.y - e.touches[0].clientY
     const steps = Math.round(deltaY / DRAG_SENSITIVITY)
     if (steps !== 0) {
       const seg = touchStartRef.current.segment
-      updatePart(seg, steps)
+      const { min: m, max: mx } = minMaxRef.current
+      const maxMin = Math.floor(mx / 60)
+      const maxSeconds = 59
+      const maxTenths = 9
+      const p = secondsToParts(valueRef.current)
+      let newParts = { ...p }
+      if (seg === 'minutes') {
+        newParts.minutes = Math.min(maxMin, Math.max(0, p.minutes + steps))
+      } else if (seg === 'seconds') {
+        newParts.seconds = Math.min(maxSeconds, Math.max(0, p.seconds + steps))
+      } else {
+        newParts.tenths = Math.min(maxTenths, Math.max(0, p.tenths + steps))
+      }
+      const newValue = Math.min(mx, Math.max(m, partsToSeconds(newParts)))
+      onChangeRef.current(newValue)
       touchStartRef.current = { ...touchStartRef.current, y: e.touches[0].clientY }
     }
-  }
+  }, [])
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = useCallback(() => {
     touchStartRef.current = null
-  }
+  }, [])
 
-  const handleWheel = (segment: Segment) => (e: React.WheelEvent) => {
+  const handleWheel = useCallback((segment: Segment) => (e: React.WheelEvent) => {
     e.preventDefault()
     const delta = e.deltaY > 0 ? -1 : 1
-    updatePart(segment, delta)
-  }
+    const { min: m, max: mx } = minMaxRef.current
+    const maxMin = Math.floor(mx / 60)
+    const maxSeconds = 59
+    const maxTenths = 9
+    const p = secondsToParts(valueRef.current)
+    let newParts = { ...p }
+    if (segment === 'minutes') {
+      newParts.minutes = Math.min(maxMin, Math.max(0, p.minutes + delta))
+    } else if (segment === 'seconds') {
+      newParts.seconds = Math.min(maxSeconds, Math.max(0, p.seconds + delta))
+    } else {
+      newParts.tenths = Math.min(maxTenths, Math.max(0, p.tenths + delta))
+    }
+    const newValue = Math.min(mx, Math.max(m, partsToSeconds(newParts)))
+    onChangeRef.current(newValue)
+  }, [])
 
   return (
     <label className="time-input-wrap">
