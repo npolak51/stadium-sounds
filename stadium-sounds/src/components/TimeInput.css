@@ -23,7 +23,6 @@
   align-items: stretch;
   padding: 0.25rem 0.5rem;
   gap: 0.25rem;
-  touch-action: none;
 }
 
 .time-input-segment {
@@ -70,6 +69,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .time-input-step-btn:hover {
@@ -91,6 +91,7 @@
   line-height: 1.2;
   flex: 1;
   min-height: 0;
+  touch-action: none;
 }
 
 .time-input-wheel-row {

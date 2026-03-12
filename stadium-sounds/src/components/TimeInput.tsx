@@ -57,10 +57,10 @@ function SegmentWheel({
   onWheel,
   onStep
 }: SegmentWheelProps) {
-  const segmentRef = useRef<HTMLDivElement>(null)
+  const wheelTrackRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const el = segmentRef.current
+    const el = wheelTrackRef.current
     if (!el) return
     const handleTouchStart = (e: TouchEvent) => {
       e.preventDefault()
@@ -100,7 +100,6 @@ function SegmentWheel({
 
   return (
     <div
-      ref={segmentRef}
       className="time-input-segment time-input-segment-wheel"
       onPointerDown={onPointerStart(segment)}
       onPointerMove={onPointerMove}
@@ -111,12 +110,19 @@ function SegmentWheel({
       <button
         type="button"
         className="time-input-step-btn time-input-step-up"
-        onClick={() => onStep(segment, 1)}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          onStep(segment, 1)
+        }}
         aria-label={`Increase ${segment}`}
       >
         +
       </button>
-      <div className="time-input-wheel-track">
+      <div
+        ref={wheelTrackRef}
+        className="time-input-wheel-track"
+      >
         {rows.map((v, i) => (
           <div
             key={`${v}-${i}`}
@@ -129,7 +135,11 @@ function SegmentWheel({
       <button
         type="button"
         className="time-input-step-btn time-input-step-down"
-        onClick={() => onStep(segment, -1)}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+          onStep(segment, -1)
+        }}
         aria-label={`Decrease ${segment}`}
       >
         −
@@ -278,7 +288,7 @@ export default function TimeInput({
   }, [])
 
   return (
-    <label className="time-input-wrap">
+    <div className="time-input-wrap">
       {label && <span className="time-input-label">{label}</span>}
       <div className="time-input time-input-segments">
         <SegmentWheel
@@ -329,6 +339,6 @@ export default function TimeInput({
           onStep={handleStep}
         />
       </div>
-    </label>
+    </div>
   )
 }
