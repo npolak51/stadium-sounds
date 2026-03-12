@@ -4,7 +4,8 @@ import './TimeInput.css'
 function secondsToParts(sec: number): { minutes: number; seconds: number; tenths: number } {
   const m = Math.floor(sec / 60)
   const s = Math.floor(sec % 60)
-  const t = Math.floor((sec % 1) * 10)
+  // Use Math.round to avoid floating-point errors (e.g. 1.2-1.0 => 0.1999... => floor gives 1 instead of 2)
+  const t = Math.min(9, Math.max(0, Math.round((sec % 1) * 10)))
   return { minutes: m, seconds: s, tenths: t }
 }
 
