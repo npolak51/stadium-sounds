@@ -11,6 +11,8 @@ A Progressive Web App (PWA) for high school baseball pitching coaches to track p
 - **Pitcher reports** – Individual game reports and composite stats across all appearances
 - **Trends** – Strike % by game to spot performance trends over time
 
+TEST
+
 ## Getting started
 
 ```bash
