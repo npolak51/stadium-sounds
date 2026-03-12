@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useEffect } from 'react'
 import './TimeInput.css'
 
 function secondsToParts(sec: number): { minutes: number; seconds: number; tenths: number } {
@@ -38,6 +38,7 @@ interface SegmentWheelProps {
   onTouchStart: (segment: Segment) => (e: React.TouchEvent) => void
   onTouchMove: (e: React.TouchEvent) => void
   onTouchEnd: () => void
+  onWheel: (segment: Segment) => (e: React.WheelEvent) => void
 }
 
 function SegmentWheel({
@@ -51,8 +52,40 @@ function SegmentWheel({
   onPointerEnd,
   onTouchStart,
   onTouchMove,
-  onTouchEnd
+  onTouchEnd,
+  onWheel
 }: SegmentWheelProps) {
+  const segmentRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = segmentRef.current
+    if (!el) return
+    const handleTouchStart = (e: TouchEvent) => {
+      onTouchStart(segment)(e as unknown as React.TouchEvent<HTMLDivElement>)
+    }
+    const handleTouchMove = (e: TouchEvent) => {
+      onTouchMove(e as unknown as React.TouchEvent<HTMLDivElement>)
+      e.preventDefault()
+    }
+    const handleTouchEnd = () => onTouchEnd()
+    const handleWheel = (e: WheelEvent) => {
+      onWheel(segment)(e as unknown as React.WheelEvent<HTMLDivElement>)
+      e.preventDefault()
+    }
+    el.addEventListener('touchstart', handleTouchStart, { passive: false })
+    el.addEventListener('touchmove', handleTouchMove, { passive: false })
+    el.addEventListener('touchend', handleTouchEnd)
+    el.addEventListener('touchcancel', handleTouchEnd)
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart)
+      el.removeEventListener('touchmove', handleTouchMove)
+      el.removeEventListener('touchend', handleTouchEnd)
+      el.removeEventListener('touchcancel', handleTouchEnd)
+      el.removeEventListener('wheel', handleWheel)
+    }
+  }, [segment, onTouchStart, onTouchMove, onTouchEnd, onWheel])
+
   const half = Math.floor(WHEEL_VISIBLE_ROWS / 2)
   const rows: number[] = []
   for (let i = -half; i <= half; i++) {
@@ -63,16 +96,13 @@ function SegmentWheel({
 
   return (
     <div
+      ref={segmentRef}
       className="time-input-segment time-input-segment-wheel"
       onPointerDown={onPointerStart(segment)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
       onPointerLeave={onPointerEnd}
-      onTouchStart={onTouchStart(segment)}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
     >
       <div className="time-input-wheel-track">
         {rows.map((v, i) => (
@@ -169,6 +199,12 @@ export default function TimeInput({
     touchStartRef.current = null
   }
 
+  const handleWheel = (segment: Segment) => (e: React.WheelEvent) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? -1 : 1
+    updatePart(segment, delta)
+  }
+
   return (
     <label className="time-input-wrap">
       {label && <span className="time-input-label">{label}</span>}
@@ -185,6 +221,7 @@ export default function TimeInput({
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onWheel={handleWheel}
         />
         <span className="time-input-segment-sep">:</span>
         <SegmentWheel
@@ -199,6 +236,7 @@ export default function TimeInput({
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onWheel={handleWheel}
         />
         <span className="time-input-segment-sep">:</span>
         <SegmentWheel
@@ -213,6 +251,7 @@ export default function TimeInput({
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onWheel={handleWheel}
         />
       </div>
     </label>
