@@ -35,6 +35,8 @@ let currentAudio: HTMLAudioElement | null = null
 let currentAssignment: AudioAssignment | null = null
 let progressInterval: ReturnType<typeof setInterval> | null = null
 let stopFadeInterval: ReturnType<typeof setInterval> | null = null
+let fadeInInterval: ReturnType<typeof setInterval> | null = null
+let fadeOutInterval: ReturnType<typeof setInterval> | null = null
 
 export type PlaybackState = {
   isPlaying: boolean
@@ -95,6 +97,14 @@ function clearPlayback() {
     clearInterval(stopFadeInterval)
     stopFadeInterval = null
   }
+  if (fadeInInterval) {
+    clearInterval(fadeInInterval)
+    fadeInInterval = null
+  }
+  if (fadeOutInterval) {
+    clearInterval(fadeOutInterval)
+    fadeOutInterval = null
+  }
   if (progressInterval) {
     clearInterval(progressInterval)
     progressInterval = null
@@ -127,14 +137,17 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   audio.volume = assignment.fadeIn ? 0 : 1
 
   if (assignment.fadeIn) {
-    const fadeSteps = 20
-    const fadeDuration = 1000
+    const fadeSteps = 25
+    const fadeDuration = 1200
     const stepInterval = fadeDuration / fadeSteps
     let step = 0
-    const fadeInterval = setInterval(() => {
+    fadeInInterval = setInterval(() => {
       step++
-      audio.volume = Math.min(1, (step / fadeSteps))
-      if (step >= fadeSteps) clearInterval(fadeInterval)
+      audio.volume = Math.min(1, step / fadeSteps)
+      if (step >= fadeSteps && fadeInInterval) {
+        clearInterval(fadeInInterval)
+        fadeInInterval = null
+      }
     }, stepInterval)
   }
 
@@ -143,19 +156,33 @@ export async function play(assignment: AudioAssignment): Promise<void> {
     clearPlayback()
   }
 
-  audio.addEventListener('ended', () => {
-    if (assignment.fadeOut) {
-      // Fade out handled via progress check
-    }
-    handleEnd()
-  })
+  audio.addEventListener('ended', handleEnd)
+
+  const startFadeOut = () => {
+    if (fadeOutInterval || !assignment.fadeOut) return
+    const startVolume = audio.volume
+    const fadeSteps = 25
+    const fadeDuration = 1200
+    const stepInterval = fadeDuration / fadeSteps
+    const volumeStep = startVolume / fadeSteps
+    let step = 0
+    fadeOutInterval = setInterval(() => {
+      step++
+      audio.volume = Math.max(0, startVolume - volumeStep * step)
+      if (step >= fadeSteps && fadeOutInterval) {
+        clearInterval(fadeOutInterval)
+        fadeOutInterval = null
+        audio.pause()
+        handleEnd()
+      }
+    }, stepInterval)
+  }
 
   audio.addEventListener('timeupdate', () => {
     const timeUntilEnd = assignment.endTime - audio.currentTime
-    if (assignment.fadeOut && timeUntilEnd <= 1 && timeUntilEnd > 0) {
-      audio.volume = Math.max(0, audio.volume - 0.05)
-    }
-    if (audio.currentTime >= assignment.endTime) {
+    if (assignment.fadeOut && timeUntilEnd <= 1.2 && !fadeOutInterval) {
+      startFadeOut()
+    } else if (!assignment.fadeOut && audio.currentTime >= assignment.endTime) {
       audio.pause()
       handleEnd()
     }

@@ -162,7 +162,7 @@
 }
 
 .player-drag-handle {
-  width: 32px;
+  width: 36px;
   min-height: 44px;
   display: flex;
   align-items: center;
@@ -176,6 +176,9 @@
   letter-spacing: -0.25em;
   cursor: grab;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
   flex-shrink: 0;
   align-self: stretch;
 }
@@ -187,6 +190,11 @@
 .player-drag-handle:hover {
   background: color-mix(in srgb, var(--primary) 20%, var(--bg-elevated));
   color: var(--text);
+}
+
+.player-row-dragging {
+  box-shadow: var(--shadow);
+  opacity: 0.95;
 }
 
 .player-row .player-btn {

@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   DndContext,
   closestCenter,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   TouchSensor,
   useSensor,
   useSensors,
-  type DragEndEvent
+  type DragEndEvent,
+  type DragStartEvent
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -104,6 +106,7 @@ export default function GameView() {
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0)
   const [showLoadPlaylist, setShowLoadPlaylist] = useState(false)
   const [preloadReady, setPreloadReady] = useState(false)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
 
   const playerMusic = [...assignments]
     .filter(a => a.purpose === 'Player Music')
@@ -127,13 +130,20 @@ export default function GameView() {
   const teamAssignmentIds = teamAssignments.map(a => a.id)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 }
+    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
 
+  const handlePlayerDragStart = useCallback((event: DragStartEvent) => {
+    setActiveDragId(event.active.id as string)
+  }, [])
+
   const handlePlayerDragEnd = useCallback(
     (event: DragEndEvent) => {
+      setActiveDragId(null)
       const { active, over } = event
       if (!over || active.id === over.id) return
       const oldIndex = teamAssignmentIds.indexOf(active.id as string)
@@ -320,6 +330,7 @@ export default function GameView() {
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
+                onDragStart={handlePlayerDragStart}
                 onDragEnd={handlePlayerDragEnd}
               >
                 <SortableContext
@@ -342,6 +353,24 @@ export default function GameView() {
                     )
                   })}
                 </SortableContext>
+                <DragOverlay dropAnimation={null}>
+                  {activeDragId ? (
+                    (() => {
+                      const idx = teamAssignments.findIndex(a => a.id === activeDragId)
+                      const player = idx >= 0 ? playersForTeam[idx] : null
+                      if (!player) return null
+                      return (
+                        <div className="player-row player-row-dragging">
+                          <div className="player-drag-handle">⋮⋮</div>
+                          <div className="player-btn">
+                            <span className="player-number">#{player.number}</span>
+                            <span className="player-name">{player.name}</span>
+                          </div>
+                        </div>
+                      )
+                    })()
+                  ) : null}
+                </DragOverlay>
               </DndContext>
             ) : (
               <p className="empty-hint">Add players and assign music in Manage</p>
