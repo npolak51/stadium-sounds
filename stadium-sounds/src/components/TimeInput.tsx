@@ -23,7 +23,7 @@ interface TimeInputProps {
   label?: string
 }
 
-const DRAG_SENSITIVITY = 12 // pixels per step (lower = easier to drag, more responsive on touch)
+const DRAG_SENSITIVITY = 8 // pixels per step (lower = easier to drag, more responsive on touch)
 const WHEEL_VISIBLE_ROWS = 5 // show 2 above + center + 2 below for context
 
 interface SegmentWheelProps {
@@ -39,6 +39,7 @@ interface SegmentWheelProps {
   onTouchMove: (e: React.TouchEvent) => void
   onTouchEnd: () => void
   onWheel: (segment: Segment) => (e: React.WheelEvent) => void
+  onStep: (segment: Segment, delta: number) => void
 }
 
 function SegmentWheel({
@@ -53,7 +54,8 @@ function SegmentWheel({
   onTouchStart,
   onTouchMove,
   onTouchEnd,
-  onWheel
+  onWheel,
+  onStep
 }: SegmentWheelProps) {
   const segmentRef = useRef<HTMLDivElement>(null)
 
@@ -61,6 +63,7 @@ function SegmentWheel({
     const el = segmentRef.current
     if (!el) return
     const handleTouchStart = (e: TouchEvent) => {
+      e.preventDefault()
       onTouchStart(segment)(e as unknown as React.TouchEvent<HTMLDivElement>)
     }
     const handleTouchMove = (e: TouchEvent) => {
@@ -105,6 +108,14 @@ function SegmentWheel({
       onPointerCancel={onPointerEnd}
       onPointerLeave={onPointerEnd}
     >
+      <button
+        type="button"
+        className="time-input-step-btn time-input-step-up"
+        onClick={() => onStep(segment, 1)}
+        aria-label={`Increase ${segment}`}
+      >
+        +
+      </button>
       <div className="time-input-wheel-track">
         {rows.map((v, i) => (
           <div
@@ -115,6 +126,14 @@ function SegmentWheel({
           </div>
         ))}
       </div>
+      <button
+        type="button"
+        className="time-input-step-btn time-input-step-down"
+        onClick={() => onStep(segment, -1)}
+        aria-label={`Decrease ${segment}`}
+      >
+        −
+      </button>
     </div>
   )
 }
@@ -240,6 +259,24 @@ export default function TimeInput({
     onChangeRef.current(newValue)
   }, [])
 
+  const handleStep = useCallback((segment: Segment, delta: number) => {
+    const { min: m, max: mx } = minMaxRef.current
+    const maxMin = Math.floor(mx / 60)
+    const maxSeconds = 59
+    const maxTenths = 9
+    const p = secondsToParts(valueRef.current)
+    let newParts = { ...p }
+    if (segment === 'minutes') {
+      newParts.minutes = Math.min(maxMin, Math.max(0, p.minutes + delta))
+    } else if (segment === 'seconds') {
+      newParts.seconds = Math.min(maxSeconds, Math.max(0, p.seconds + delta))
+    } else {
+      newParts.tenths = Math.min(maxTenths, Math.max(0, p.tenths + delta))
+    }
+    const newValue = Math.min(mx, Math.max(m, partsToSeconds(newParts)))
+    onChangeRef.current(newValue)
+  }, [])
+
   return (
     <label className="time-input-wrap">
       {label && <span className="time-input-label">{label}</span>}
@@ -257,6 +294,7 @@ export default function TimeInput({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onWheel={handleWheel}
+          onStep={handleStep}
         />
         <span className="time-input-segment-sep">:</span>
         <SegmentWheel
@@ -272,6 +310,7 @@ export default function TimeInput({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onWheel={handleWheel}
+          onStep={handleStep}
         />
         <span className="time-input-segment-sep">:</span>
         <SegmentWheel
@@ -287,6 +326,7 @@ export default function TimeInput({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onWheel={handleWheel}
+          onStep={handleStep}
         />
       </div>
     </label>
