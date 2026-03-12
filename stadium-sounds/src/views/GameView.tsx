@@ -1,4 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useAppData } from '../context/AppDataContext'
 import {
   subscribe,
@@ -14,6 +32,50 @@ import './GameView.css'
 import type { SoundEffectCategory, TeamType } from '../types'
 
 const TEAMS: TeamType[] = ['Varsity', 'JV Blue', 'JV Gold']
+
+function SortablePlayerRow({
+  assignmentId,
+  player,
+  isActive,
+  preloadReady,
+  onPlay
+}: {
+  assignmentId: string
+  player: Player
+  isActive: boolean
+  preloadReady: boolean
+  onPlay: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: assignmentId
+  })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1
+  }
+  return (
+    <div ref={setNodeRef} style={style} className="player-row">
+      <div
+        className="player-drag-handle"
+        {...attributes}
+        {...listeners}
+        aria-label="Drag to reorder"
+      >
+        ⋮⋮
+      </div>
+      <button
+        className={`player-btn ${isActive ? 'active' : ''}`}
+        onClick={onPlay}
+        disabled={!preloadReady}
+      >
+        <span className="player-number">#{player.number}</span>
+        <span className="player-name">{player.name}</span>
+        {isActive && <span className="playing-indicator">♪</span>}
+      </button>
+    </div>
+  )
+}
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -55,13 +117,33 @@ export default function GameView() {
     a => a.soundEffectCategory === selectedSoundCategory
   )
 
-  const playersForTeam = playerMusic
-    .filter(a => {
-      const p = players.find(pl => pl.id === a.player)
-      return p?.team === selectedTeam
-    })
+  const teamAssignments = playerMusic.filter(a => {
+    const p = players.find(pl => pl.id === a.player)
+    return p?.team === selectedTeam
+  })
+  const playersForTeam = teamAssignments
     .map(a => players.find(p => p.id === a.player)!)
     .filter(Boolean)
+  const teamAssignmentIds = teamAssignments.map(a => a.id)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  const handlePlayerDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      const oldIndex = teamAssignmentIds.indexOf(active.id as string)
+      const newIndex = teamAssignmentIds.indexOf(over.id as string)
+      if (oldIndex < 0 || newIndex < 0) return
+      const newOrder = arrayMove(teamAssignmentIds, oldIndex, newIndex)
+      reorderPlayerMusic(newOrder)
+    },
+    [teamAssignmentIds, reorderPlayerMusic]
+  )
 
   useEffect(() => {
     const unsub = subscribe(setPlaybackState)
@@ -234,51 +316,34 @@ export default function GameView() {
             ))}
           </div>
           <div className="player-list">
-            {playersForTeam.map((player, index) => {
-                const assignment = playerMusic.find(a => a.player === player.id)
-                const isActive = currentPlayingPlayerId === player.id
-                if (!assignment) return null
-                return (
-                  <div key={player.id} className="player-row">
-                    <div className="reorder-buttons">
-                      <button
-                        type="button"
-                        className="btn-icon"
-                        onClick={e => {
-                          e.stopPropagation()
-                          reorderPlayerMusic(assignment.id, 'up')
-                        }}
-                        disabled={index === 0}
-                        aria-label="Move up"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-icon"
-                        onClick={e => {
-                          e.stopPropagation()
-                          reorderPlayerMusic(assignment.id, 'down')
-                        }}
-                        disabled={index === playersForTeam.length - 1}
-                        aria-label="Move down"
-                      >
-                        ↓
-                      </button>
-                    </div>
-                    <button
-                      className={`player-btn ${isActive ? 'active' : ''}`}
-                      onClick={() => handlePlayPlayer(player)}
-                      disabled={!preloadReady}
-                    >
-                      <span className="player-number">#{player.number}</span>
-                      <span className="player-name">{player.name}</span>
-                      {isActive && <span className="playing-indicator">♪</span>}
-                    </button>
-                  </div>
-                )
-              })}
-            {playersForTeam.length === 0 && (
+            {teamAssignmentIds.length > 0 ? (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handlePlayerDragEnd}
+              >
+                <SortableContext
+                  items={teamAssignmentIds}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {teamAssignments.map((assignment, index) => {
+                    const player = playersForTeam[index]
+                    if (!player) return null
+                    const isActive = currentPlayingPlayerId === player.id
+                    return (
+                      <SortablePlayerRow
+                        key={assignment.id}
+                        assignmentId={assignment.id}
+                        player={player}
+                        isActive={isActive}
+                        preloadReady={preloadReady}
+                        onPlay={() => handlePlayPlayer(player)}
+                      />
+                    )
+                  })}
+                </SortableContext>
+              </DndContext>
+            ) : (
               <p className="empty-hint">Add players and assign music in Manage</p>
             )}
           </div>

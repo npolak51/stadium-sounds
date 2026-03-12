@@ -21,7 +21,7 @@ interface AppDataContextValue {
   updateAssignment: (assignment: AudioAssignment) => void
   removeAssignment: (assignment: AudioAssignment) => void
   reorderPlaylist: (from: number[], to: number) => void
-  reorderPlayerMusic: (assignmentId: string, direction: 'up' | 'down') => void
+  reorderPlayerMusic: (orderedAssignmentIds: string[]) => void
   normalizePlaylistOrder: () => void
   setPlaylistOrder: (assignment: AudioAssignment) => void
   saveCurrentPlaylist: (name: string) => void
@@ -146,27 +146,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const reorderPlayerMusic = useCallback((assignmentId: string, direction: 'up' | 'down') => {
+  const reorderPlayerMusic = useCallback((orderedAssignmentIds: string[]) => {
+    if (orderedAssignmentIds.length === 0) return
     setAssignments(prev => {
-      const assignment = prev.find(a => a.id === assignmentId)
-      if (!assignment || assignment.purpose !== 'Player Music' || !assignment.player) return prev
-      const player = players.find(p => p.id === assignment.player)
-      const team = player?.team ?? 'Varsity'
-      const teamAssignments = prev
-        .filter(a => a.purpose === 'Player Music' && (players.find(p => p.id === a.player)?.team ?? 'Varsity') === team)
-        .sort((a, b) => (a.playerOrder ?? 0) - (b.playerOrder ?? 0))
-      const idx = teamAssignments.findIndex(a => a.id === assignmentId)
-      if (idx < 0) return prev
-      const newIdx = direction === 'up' ? idx - 1 : idx + 1
-      if (newIdx < 0 || newIdx >= teamAssignments.length) return prev
-      ;[teamAssignments[idx], teamAssignments[newIdx]] = [teamAssignments[newIdx], teamAssignments[idx]]
-      const orderMap = new Map(teamAssignments.map((a, i) => [a.id, i]))
+      const orderMap = new Map(orderedAssignmentIds.map((id, i) => [id, i]))
       return prev.map(a => {
         const order = orderMap.get(a.id)
         return order !== undefined ? { ...a, playerOrder: order } : a
       })
     })
-  }, [players])
+  }, [])
 
   const normalizePlaylistOrder = useCallback(() => {
     setAssignments(prev => {

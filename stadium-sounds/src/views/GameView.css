@@ -128,7 +128,8 @@
   gap: 1.5rem;
 }
 
-@media (max-width: 768px) {
+/* Stack only on small phones; keep side-by-side on iPad (768px+) */
+@media (max-width: 600px) {
   .game-grid {
     grid-template-columns: 1fr;
   }
@@ -160,35 +161,32 @@
   gap: 0.5rem;
 }
 
-.player-row .reorder-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.player-row .btn-icon {
-  width: 28px;
-  height: 24px;
-  padding: 0;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text);
-  font-size: 0.9rem;
-  cursor: pointer;
+.player-drag-handle {
+  width: 32px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.25em;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+  align-self: stretch;
 }
 
-.player-row .btn-icon:hover:not(:disabled) {
-  background: var(--primary);
-  border-color: var(--primary-light);
+.player-drag-handle:active {
+  cursor: grabbing;
 }
 
-.player-row .btn-icon:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+.player-drag-handle:hover {
+  background: color-mix(in srgb, var(--primary) 20%, var(--bg-elevated));
+  color: var(--text);
 }
 
 .player-row .player-btn {
