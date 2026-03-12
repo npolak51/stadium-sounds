@@ -21,6 +21,7 @@ interface AppDataContextValue {
   updateAssignment: (assignment: AudioAssignment) => void
   removeAssignment: (assignment: AudioAssignment) => void
   reorderPlaylist: (from: number[], to: number) => void
+  reorderPlayerMusic: (assignmentId: string, direction: 'up' | 'down') => void
   normalizePlaylistOrder: () => void
   setPlaylistOrder: (assignment: AudioAssignment) => void
   saveCurrentPlaylist: (name: string) => void
@@ -52,8 +53,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       db.getAllAssignments(),
       db.getAllPlaylists()
     ])
-    setPlayers(p.map(pr => ({ ...pr, team: pr.team ?? 'Varsity' })))
-    setAssignments(a)
+    const playersData = p.map(pr => ({ ...pr, team: pr.team ?? 'Varsity' }))
+    const playerMap = new Map(playersData.map(pr => [pr.id, pr]))
+    // Ensure Player Music assignments have playerOrder (migration for existing data)
+    const teamOrderCount = new Map<string, number>()
+    const assignmentsData = a.map(assignment => {
+      if (assignment.purpose === 'Player Music' && assignment.playerOrder == null) {
+        const team = assignment.player ? (playerMap.get(assignment.player)?.team ?? 'Varsity') : 'Varsity'
+        const order = teamOrderCount.get(team) ?? 0
+        teamOrderCount.set(team, order + 1)
+        return { ...assignment, playerOrder: order }
+      }
+      return assignment
+    })
+    setPlayers(playersData)
+    setAssignments(assignmentsData)
     setSavedPlaylists(pl)
   }, [])
 
@@ -93,8 +107,19 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addAssignment = useCallback((assignment: AudioAssignment) => {
-    setAssignments(prev => [...prev, assignment])
-  }, [])
+    setAssignments(prev => {
+      let next = assignment
+      if (assignment.purpose === 'Player Music' && assignment.player) {
+        const player = players.find(p => p.id === assignment.player)
+        const team = player?.team ?? 'Varsity'
+        const maxOrder = prev
+          .filter(a => a.purpose === 'Player Music' && (players.find(p => p.id === a.player)?.team ?? 'Varsity') === team)
+          .reduce((m, a) => Math.max(m, a.playerOrder ?? -1), -1)
+        next = { ...assignment, playerOrder: maxOrder + 1 }
+      }
+      return [...prev, next]
+    })
+  }, [players])
 
   const updateAssignment = useCallback((assignment: AudioAssignment) => {
     setAssignments(prev =>
@@ -120,6 +145,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       })
     })
   }, [])
+
+  const reorderPlayerMusic = useCallback((assignmentId: string, direction: 'up' | 'down') => {
+    setAssignments(prev => {
+      const assignment = prev.find(a => a.id === assignmentId)
+      if (!assignment || assignment.purpose !== 'Player Music' || !assignment.player) return prev
+      const player = players.find(p => p.id === assignment.player)
+      const team = player?.team ?? 'Varsity'
+      const teamAssignments = prev
+        .filter(a => a.purpose === 'Player Music' && (players.find(p => p.id === a.player)?.team ?? 'Varsity') === team)
+        .sort((a, b) => (a.playerOrder ?? 0) - (b.playerOrder ?? 0))
+      const idx = teamAssignments.findIndex(a => a.id === assignmentId)
+      if (idx < 0) return prev
+      const newIdx = direction === 'up' ? idx - 1 : idx + 1
+      if (newIdx < 0 || newIdx >= teamAssignments.length) return prev
+      ;[teamAssignments[idx], teamAssignments[newIdx]] = [teamAssignments[newIdx], teamAssignments[idx]]
+      const orderMap = new Map(teamAssignments.map((a, i) => [a.id, i]))
+      return prev.map(a => {
+        const order = orderMap.get(a.id)
+        return order !== undefined ? { ...a, playerOrder: order } : a
+      })
+    })
+  }, [players])
 
   const normalizePlaylistOrder = useCallback(() => {
     setAssignments(prev => {
@@ -247,10 +294,21 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const importConfiguration = useCallback((json: string) => {
     const config: AppConfiguration = JSON.parse(json)
-    setPlayers(config.players.map(p => ({ ...p, id: p.id || generateId() })))
-    setAssignments(
-      config.assignments.map(a => ({ ...a, id: a.id || generateId() }))
-    )
+    const playersData = config.players.map(p => ({ ...p, id: p.id || generateId() }))
+    const playerMap = new Map(playersData.map(pr => [pr.id, pr]))
+    const teamOrderCount = new Map<string, number>()
+    const assignmentsData = config.assignments.map(a => {
+      const assignment = { ...a, id: a.id || generateId() }
+      if (assignment.purpose === 'Player Music' && assignment.playerOrder == null && assignment.player) {
+        const team = playerMap.get(assignment.player)?.team ?? 'Varsity'
+        const order = teamOrderCount.get(team) ?? 0
+        teamOrderCount.set(team, order + 1)
+        return { ...assignment, playerOrder: order }
+      }
+      return assignment
+    })
+    setPlayers(playersData)
+    setAssignments(assignmentsData)
     setSavedPlaylists(
       config.savedPlaylists.map(p => ({
         ...p,
@@ -271,6 +329,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     updateAssignment,
     removeAssignment,
     reorderPlaylist,
+    reorderPlayerMusic,
     normalizePlaylistOrder,
     setPlaylistOrder,
     saveCurrentPlaylist,

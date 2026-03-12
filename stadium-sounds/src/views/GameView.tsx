@@ -27,7 +27,8 @@ export default function GameView() {
     assignments,
     savedPlaylists,
     loadPlaylist,
-    deletePlaylist
+    deletePlaylist,
+    reorderPlayerMusic
   } = useAppData()
 
   const [playbackState, setPlaybackState] = useState<PlaybackState | null>(null)
@@ -42,7 +43,9 @@ export default function GameView() {
   const [showLoadPlaylist, setShowLoadPlaylist] = useState(false)
   const [preloadReady, setPreloadReady] = useState(false)
 
-  const playerMusic = assignments.filter(a => a.purpose === 'Player Music')
+  const playerMusic = [...assignments]
+    .filter(a => a.purpose === 'Player Music')
+    .sort((a, b) => (a.playerOrder ?? 0) - (b.playerOrder ?? 0))
   const soundEffects = assignments.filter(a => a.purpose === 'Sound Effect')
   const playlistItems = [...assignments]
     .filter(a => a.purpose === 'In-Game Playlist')
@@ -52,9 +55,13 @@ export default function GameView() {
     a => a.soundEffectCategory === selectedSoundCategory
   )
 
-  const playersForTeam = players.filter(
-    p => p.team === selectedTeam && playerMusic.some(a => a.player === p.id)
-  )
+  const playersForTeam = playerMusic
+    .filter(a => {
+      const p = players.find(pl => pl.id === a.player)
+      return p?.team === selectedTeam
+    })
+    .map(a => players.find(p => p.id === a.player)!)
+    .filter(Boolean)
 
   useEffect(() => {
     const unsub = subscribe(setPlaybackState)
@@ -227,20 +234,48 @@ export default function GameView() {
             ))}
           </div>
           <div className="player-list">
-            {playersForTeam.map(player => {
+            {playersForTeam.map((player, index) => {
                 const assignment = playerMusic.find(a => a.player === player.id)
                 const isActive = currentPlayingPlayerId === player.id
+                if (!assignment) return null
                 return (
-                  <button
-                    key={player.id}
-                    className={`player-btn ${isActive ? 'active' : ''}`}
-                    onClick={() => handlePlayPlayer(player)}
-                    disabled={!assignment || !preloadReady}
-                  >
-                    <span className="player-number">#{player.number}</span>
-                    <span className="player-name">{player.name}</span>
-                    {isActive && <span className="playing-indicator">♪</span>}
-                  </button>
+                  <div key={player.id} className="player-row">
+                    <div className="reorder-buttons">
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        onClick={e => {
+                          e.stopPropagation()
+                          reorderPlayerMusic(assignment.id, 'up')
+                        }}
+                        disabled={index === 0}
+                        aria-label="Move up"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-icon"
+                        onClick={e => {
+                          e.stopPropagation()
+                          reorderPlayerMusic(assignment.id, 'down')
+                        }}
+                        disabled={index === playersForTeam.length - 1}
+                        aria-label="Move down"
+                      >
+                        ↓
+                      </button>
+                    </div>
+                    <button
+                      className={`player-btn ${isActive ? 'active' : ''}`}
+                      onClick={() => handlePlayPlayer(player)}
+                      disabled={!preloadReady}
+                    >
+                      <span className="player-number">#{player.number}</span>
+                      <span className="player-name">{player.name}</span>
+                      {isActive && <span className="playing-indicator">♪</span>}
+                    </button>
+                  </div>
                 )
               })}
             {playersForTeam.length === 0 && (

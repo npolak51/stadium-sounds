@@ -23,7 +23,70 @@ interface TimeInputProps {
   label?: string
 }
 
-const DRAG_SENSITIVITY = 18 // pixels per step
+const DRAG_SENSITIVITY = 12 // pixels per step (lower = easier to drag, more responsive on touch)
+const WHEEL_VISIBLE_ROWS = 5 // show 2 above + center + 2 below for context
+
+interface SegmentWheelProps {
+  value: number
+  min: number
+  max: number
+  pad?: number
+  segment: Segment
+  onPointerStart: (segment: Segment) => (e: React.PointerEvent) => void
+  onPointerMove: (e: React.PointerEvent) => void
+  onPointerEnd: () => void
+  onTouchStart: (segment: Segment) => (e: React.TouchEvent) => void
+  onTouchMove: (e: React.TouchEvent) => void
+  onTouchEnd: () => void
+}
+
+function SegmentWheel({
+  value,
+  min,
+  max,
+  pad = 2,
+  segment,
+  onPointerStart,
+  onPointerMove,
+  onPointerEnd,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd
+}: SegmentWheelProps) {
+  const half = Math.floor(WHEEL_VISIBLE_ROWS / 2)
+  const rows: number[] = []
+  for (let i = -half; i <= half; i++) {
+    rows.push(Math.min(max, Math.max(min, value + i)))
+  }
+
+  const format = (v: number) => v.toString().padStart(pad, '0')
+
+  return (
+    <div
+      className="time-input-segment time-input-segment-wheel"
+      onPointerDown={onPointerStart(segment)}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+      onPointerLeave={onPointerEnd}
+      onTouchStart={onTouchStart(segment)}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onTouchCancel={onTouchEnd}
+    >
+      <div className="time-input-wheel-track">
+        {rows.map((v, i) => (
+          <div
+            key={`${v}-${i}`}
+            className={`time-input-wheel-row ${i === half ? 'time-input-wheel-center' : ''}`}
+          >
+            {format(v)}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function TimeInput({
   value,
@@ -39,8 +102,9 @@ export default function TimeInput({
     value: number
   } | null>(null)
 
+  const maxMinutes = Math.floor(max / 60)
+
   const updatePart = (segment: Segment, delta: number) => {
-    const maxMinutes = Math.floor(max / 60)
     const maxSeconds = 59
     const maxTenths = 9
 
@@ -57,7 +121,7 @@ export default function TimeInput({
   }
 
   const handlePointerStart = (segment: Segment) => (e: React.PointerEvent) => {
-    (e.target as HTMLElement).setPointerCapture(e.pointerId)
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     touchStartRef.current = {
       y: e.clientY,
       segment,
@@ -109,44 +173,47 @@ export default function TimeInput({
     <label className="time-input-wrap">
       {label && <span className="time-input-label">{label}</span>}
       <div className="time-input time-input-segments">
-        <div
-          className="time-input-segment"
-          onPointerDown={handlePointerStart('minutes')}
+        <SegmentWheel
+          value={parts.minutes}
+          min={0}
+          max={maxMinutes}
+          pad={2}
+          segment="minutes"
+          onPointerStart={handlePointerStart}
           onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-          onPointerCancel={handlePointerEnd}
-          onTouchStart={handleTouchStart('minutes')}
+          onPointerEnd={handlePointerEnd}
+          onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-        >
-          {parts.minutes.toString().padStart(2, '0')}
-        </div>
+        />
         <span className="time-input-segment-sep">:</span>
-        <div
-          className="time-input-segment"
-          onPointerDown={handlePointerStart('seconds')}
+        <SegmentWheel
+          value={parts.seconds}
+          min={0}
+          max={59}
+          pad={2}
+          segment="seconds"
+          onPointerStart={handlePointerStart}
           onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-          onPointerCancel={handlePointerEnd}
-          onTouchStart={handleTouchStart('seconds')}
+          onPointerEnd={handlePointerEnd}
+          onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-        >
-          {parts.seconds.toString().padStart(2, '0')}
-        </div>
+        />
         <span className="time-input-segment-sep">:</span>
-        <div
-          className="time-input-segment time-input-segment-tenths"
-          onPointerDown={handlePointerStart('tenths')}
+        <SegmentWheel
+          value={parts.tenths}
+          min={0}
+          max={9}
+          pad={1}
+          segment="tenths"
+          onPointerStart={handlePointerStart}
           onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerEnd}
-          onPointerCancel={handlePointerEnd}
-          onTouchStart={handleTouchStart('tenths')}
+          onPointerEnd={handlePointerEnd}
+          onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-        >
-          {parts.tenths}
-        </div>
+        />
       </div>
     </label>
   )

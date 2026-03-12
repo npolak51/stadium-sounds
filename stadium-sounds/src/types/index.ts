@@ -24,6 +24,7 @@ export interface AudioAssignment {
   endTime: number
   duration: number
   player?: string // Player ID for Player Music
+  playerOrder?: number // Display order in Player Music tab (per team)
   fadeIn: boolean
   fadeOut: boolean
   soundEffectCategory?: SoundEffectCategory
