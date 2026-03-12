@@ -4,6 +4,7 @@ import { storeAudioFile, getStorageUsage, getAllStoredFiles, clearAllAudioFiles 
 import { previewPlay, getAudioDuration, subscribe, seekToFullPosition, preloadBlobs, clearBlobCache } from '../lib/audioService'
 import TimeInput from '../components/TimeInput'
 import ChooseAudioModal from '../components/ChooseAudioModal'
+import EditAssignmentModal from '../components/EditAssignmentModal'
 import PreviewTimeBar from '../components/PreviewTimeBar'
 import type { Player, AudioAssignment, SoundEffectCategory, PurposeType, TeamType } from '../types'
 import './ManageView.css'
@@ -33,6 +34,7 @@ export default function ManageView() {
     updatePlayer,
     removePlayer,
     addAssignment,
+    updateAssignment,
     removeAssignment,
     setPlaylistOrder,
     exportConfiguration,
@@ -60,9 +62,14 @@ export default function ManageView() {
   }
 
   const handleSavePlayerAudio = (assignment: AudioAssignment) => {
-    const existing = assignments.find(a => a.purpose === 'Player Music' && a.player === assignment.player)
-    if (existing) removeAssignment(existing)
-    addAssignment(assignment)
+    const existingById = assignments.find(a => a.id === assignment.id)
+    if (existingById) {
+      updateAssignment(assignment)
+    } else {
+      const existing = assignments.find(a => a.purpose === 'Player Music' && a.player === assignment.player)
+      if (existing) removeAssignment(existing)
+      addAssignment(assignment)
+    }
     setChooseAudioPlayerId(null)
   }
 
@@ -126,6 +133,9 @@ export default function ManageView() {
       {chooseAudioPlayerId && (
         <ChooseAudioModal
           playerId={chooseAudioPlayerId}
+          initialAssignment={assignments.find(
+            a => a.purpose === 'Player Music' && a.player === chooseAudioPlayerId
+          )}
           onSave={handleSavePlayerAudio}
           onClose={() => setChooseAudioPlayerId(null)}
           onFilesChange={loadStorageInfo}
@@ -136,6 +146,7 @@ export default function ManageView() {
         <AudioTab
           assignments={assignments}
           addAssignment={addAssignment}
+          updateAssignment={updateAssignment}
           removeAssignment={removeAssignment}
           setPlaylistOrder={setPlaylistOrder}
           onFilesChange={loadStorageInfo}
@@ -225,7 +236,7 @@ function PlayersTab({
                       className={assignment ? 'btn-primary btn-small' : 'btn-secondary btn-small'}
                       onClick={() => onChooseAudio(p.id)}
                     >
-                      {assignment ? assignment.fileName.replace(/\.[^/.]+$/, '') : 'Choose Audio'}
+                      {assignment ? 'Edit' : 'Choose Audio'}
                     </button>
                   </td>
                   <td>
@@ -255,9 +266,12 @@ function PlayersTab({
   )
 }
 
+const DEFAULT_DURATION = 15
+
 function AudioTab({
   assignments,
   addAssignment,
+  updateAssignment,
   removeAssignment,
   setPlaylistOrder,
   onFilesChange,
@@ -268,6 +282,7 @@ function AudioTab({
 }: {
   assignments: AudioAssignment[]
   addAssignment: (a: AudioAssignment) => void
+  updateAssignment: (a: AudioAssignment) => void
   removeAssignment: (a: AudioAssignment) => void
   setPlaylistOrder: (a: AudioAssignment) => void
   onFilesChange: () => void
@@ -281,8 +296,9 @@ function AudioTab({
   const [soundCategory, setSoundCategory] = useState<SoundEffectCategory>('Pre/Postgame')
   const [soundEffectName, setSoundEffectName] = useState('')
   const [startTime, setStartTime] = useState(0)
-  const [endTime, setEndTime] = useState(12)
-  const [duration, setDuration] = useState(12)
+  const [endTime, setEndTime] = useState(DEFAULT_DURATION)
+  const [duration, setDuration] = useState(DEFAULT_DURATION)
+  const [editingAssignment, setEditingAssignment] = useState<AudioAssignment | null>(null)
   const [fileDuration, setFileDuration] = useState<number | null>(null)
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [fadeIn, setFadeIn] = useState(false)
@@ -373,8 +389,8 @@ function AudioTab({
     setSelectedFile(null)
     setSoundEffectName('')
     setStartTime(0)
-    setEndTime(12)
-    setDuration(12)
+    setEndTime(DEFAULT_DURATION)
+    setDuration(DEFAULT_DURATION)
   }
 
   const handleExport = () => {
@@ -569,6 +585,13 @@ function AudioTab({
                   : a.fileName.replace(/\.[^/.]+$/, '')}
               </span>
               <span className="purpose-badge">{a.purpose}</span>
+              <button
+                type="button"
+                className="btn-secondary btn-small"
+                onClick={() => setEditingAssignment(a)}
+              >
+                Edit
+              </button>
               <button className="btn-small danger" onClick={() => removeAssignment(a)}>Remove</button>
             </div>
           ))}
@@ -576,6 +599,17 @@ function AudioTab({
           <p className="empty-hint">Create assignments above after importing audio files.</p>
         )}
       </div>
+
+      {editingAssignment && (
+        <EditAssignmentModal
+          assignment={editingAssignment}
+          onSave={updated => {
+            updateAssignment(updated)
+            setEditingAssignment(null)
+          }}
+          onClose={() => setEditingAssignment(null)}
+        />
+      )}
 
       <div className="backup-section">
         <h3>Backup & Restore</h3>

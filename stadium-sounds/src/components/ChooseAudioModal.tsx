@@ -12,22 +12,31 @@ function generateId() {
 
 interface ChooseAudioModalProps {
   playerId: string
+  initialAssignment?: AudioAssignment | null
   onSave: (assignment: AudioAssignment) => void
   onClose: () => void
   onFilesChange?: () => void
 }
 
-export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesChange }: ChooseAudioModalProps) {
+const DEFAULT_DURATION = 15
+
+export default function ChooseAudioModal({
+  playerId,
+  initialAssignment,
+  onSave,
+  onClose,
+  onFilesChange
+}: ChooseAudioModalProps) {
   const [storedFiles, setStoredFiles] = useState<{ path: string; fileName: string }[]>([])
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<string | null>(initialAssignment?.filePath ?? null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [startTime, setStartTime] = useState(0)
-  const [endTime, setEndTime] = useState(12)
-  const [duration, setDuration] = useState(12)
+  const [startTime, setStartTime] = useState(initialAssignment?.startTime ?? 0)
+  const [endTime, setEndTime] = useState(initialAssignment?.endTime ?? DEFAULT_DURATION)
+  const [duration, setDuration] = useState(initialAssignment?.duration ?? DEFAULT_DURATION)
   const [fileDuration, setFileDuration] = useState<number | null>(null)
   const [isPreviewing, setIsPreviewing] = useState(false)
-  const [fadeIn, setFadeIn] = useState(false)
-  const [fadeOut, setFadeOut] = useState(false)
+  const [fadeIn, setFadeIn] = useState(initialAssignment?.fadeIn ?? false)
+  const [fadeOut, setFadeOut] = useState(initialAssignment?.fadeOut ?? false)
   const [playbackPosition, setPlaybackPosition] = useState<number | null>(null)
 
   useEffect(() => {
@@ -73,10 +82,12 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
 
   useEffect(() => {
     if (!selectedFile) return
-    setStartTime(0)
-    setDuration(12)
-    setEndTime(12)
-  }, [selectedFile])
+    if (!initialAssignment || selectedFile !== initialAssignment.filePath) {
+      setStartTime(0)
+      setDuration(DEFAULT_DURATION)
+      setEndTime(DEFAULT_DURATION)
+    }
+  }, [selectedFile, initialAssignment])
 
   const handleSave = () => {
     if (!selectedFile) return
@@ -84,7 +95,8 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
     const fileName = fileInfo?.fileName ?? selectedFile.split('_').slice(1).join('_')
     const end = endTime > startTime ? endTime : startTime + 60
     const assignment: AudioAssignment = {
-      id: generateId(),
+      ...(initialAssignment ?? {}),
+      id: initialAssignment?.id ?? generateId(),
       fileName,
       filePath: selectedFile,
       purpose: 'Player Music',
@@ -102,7 +114,7 @@ export default function ChooseAudioModal({ playerId, onSave, onClose, onFilesCha
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal choose-audio-modal" onClick={e => e.stopPropagation()}>
-        <h3>Choose Audio</h3>
+        <h3>{initialAssignment ? 'Edit Audio' : 'Choose Audio'}</h3>
         <input
           ref={fileInputRef}
           type="file"

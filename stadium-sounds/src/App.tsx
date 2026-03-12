@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { AppDataProvider, useAppData } from './context/AppDataContext'
+import { PwaUpdateProvider } from './contexts/PwaUpdateContext'
+import { UpdateBanner } from './components/UpdateBanner'
 import GameView from './views/GameView'
 import PlaylistsView from './views/PlaylistsView'
 import ManageView from './views/ManageView'
@@ -21,10 +23,12 @@ function App() {
   const [tab, setTab] = useState<Tab>('game')
 
   return (
-    <AppDataProvider>
-      <PreloadAudio />
-      <div className="app">
-        <header className="app-header">
+    <PwaUpdateProvider>
+      <AppDataProvider>
+        <PreloadAudio />
+        <div className="app">
+          <UpdateBanner />
+          <header className="app-header">
           <h1 className="app-title">Stadium Sounds</h1>
           <nav className="app-nav">
             <button
@@ -57,6 +61,7 @@ function App() {
         </main>
       </div>
     </AppDataProvider>
+    </PwaUpdateProvider>
   )
 }
 
