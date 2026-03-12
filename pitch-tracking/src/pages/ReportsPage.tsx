@@ -1,22 +1,27 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getAllGames, getAllPitchers, getGamesByPitcher } from '../lib/storage'
+import { getAllGames, getAllPitchers, getGamesWherePitcherAppeared, deleteGame } from '../lib/storage'
 import type { Game, Pitcher } from '../types'
+import { LoadingSkeleton } from '../components/LoadingSkeleton'
+import { ErrorMessage } from '../components/ErrorMessage'
 
 export function ReportsPage() {
   const [pitchers, setPitchers] = useState<(Pitcher & { gameCount: number })[]>([])
   const [recentGames, setRecentGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [deletingGameId, setDeletingGameId] = useState<string | null>(null)
 
-  useEffect(() => {
+  const loadData = () => {
+    setError(null)
     Promise.all([getAllPitchers(), getAllGames()]).then(async ([p, games]) => {
       const completed = games.filter((g) => g.isComplete)
       const withCounts = await Promise.all(
         p.map(async (pitcher) => {
-          const pitcherGames = await getGamesByPitcher(pitcher.id)
+          const pitcherGames = await getGamesWherePitcherAppeared(pitcher.id)
           return {
             ...pitcher,
-            gameCount: pitcherGames.filter((g) => g.isComplete).length,
+            gameCount: pitcherGames.length,
           }
         })
       )
@@ -25,13 +30,43 @@ export function ReportsPage() {
         completed.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 15)
       )
       setLoading(false)
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Failed to load reports')
+      setLoading(false)
     })
+  }
+
+  useEffect(() => {
+    loadData()
   }, [])
+
+  const handleDeleteGame = async (e: React.MouseEvent, gameId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!window.confirm('Delete this game report? This cannot be undone.')) return
+    setDeletingGameId(gameId)
+    try {
+      await deleteGame(gameId)
+      loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete game')
+    } finally {
+      setDeletingGameId(null)
+    }
+  }
 
   if (loading) {
     return (
       <div className="page reports-page">
-        <p>Loading...</p>
+        <LoadingSkeleton variant="list" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="page reports-page">
+        <ErrorMessage message={error} onRetry={loadData} />
       </div>
     )
   }
@@ -66,13 +101,23 @@ export function ReportsPage() {
         <p className="section-desc">View post-game report for any game</p>
         <ul className="game-list">
           {recentGames.map((game) => (
-            <li key={game.id}>
-              <Link to={`/reports/game/${game.id}`}>
+            <li key={game.id} className="game-list-item-with-actions">
+              <Link to={`/reports/game/${game.id}`} className="game-link">
                 {game.pitcher.name} vs {game.opponent}
                 <span className="date">
                   {new Date(game.date).toLocaleDateString()}
                 </span>
               </Link>
+              <button
+                type="button"
+                className="delete-game-btn"
+                onClick={(e) => handleDeleteGame(e, game.id)}
+                disabled={deletingGameId === game.id}
+                title="Delete game report"
+                aria-label="Delete game report"
+              >
+                {deletingGameId === game.id ? '…' : 'Delete'}
+              </button>
             </li>
           ))}
         </ul>

@@ -2,11 +2,18 @@
 
 export type PitchType = 'fastball' | 'curveball' | 'slider' | 'changeup' | 'cutter' | 'splitter'
 
-export type PitchResult = 'whiff' | 'foul' | 'in_play' | 'called_strike' | 'ball'
+export type PitchResult = 'whiff' | 'foul' | 'in_play' | 'called_strike' | 'ball' | 'catchers_interference'
 
 export type ContactTrajectory = 'flyball' | 'line_drive' | 'groundball' | 'pop_up'
 
-export type ContactType = 'weak' | 'normal' | 'hard'
+export type ContactType = 'weak' | 'average' | 'hard' | 'bunt'
+
+/** Normalized hit location: x,y 0-1, fair=true if in fair territory */
+export interface HitLocation {
+  x: number
+  y: number
+  fair: boolean
+}
 
 export type Timing = 'early' | 'on_time' | 'late'
 
@@ -47,6 +54,7 @@ export interface Pitch {
   timestamp: string
   contactTrajectory?: ContactTrajectory
   contactType?: ContactType
+  hitLocation?: HitLocation
   timing?: Timing
 }
 

@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import { getAllPitchers, savePitcher, deletePitcher, generateId } from '../lib/storage'
 import type { Pitcher } from '../types'
+import { LoadingSkeleton } from '../components/LoadingSkeleton'
+import { ErrorMessage } from '../components/ErrorMessage'
 
 export function RosterPage() {
   const [pitchers, setPitchers] = useState<Pitcher[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [newName, setNewName] = useState('')
   const [newJersey, setNewJersey] = useState('')
@@ -14,10 +17,16 @@ export function RosterPage() {
   }, [])
 
   const loadPitchers = () => {
-    getAllPitchers().then((p) => {
-      setPitchers(p.sort((a, b) => a.name.localeCompare(b.name)))
-      setLoading(false)
-    })
+    setError(null)
+    getAllPitchers()
+      .then((p) => {
+        setPitchers(p.sort((a, b) => a.name.localeCompare(b.name)))
+        setLoading(false)
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to load roster')
+        setLoading(false)
+      })
   }
 
   const handleAdd = async () => {
@@ -43,7 +52,15 @@ export function RosterPage() {
   if (loading) {
     return (
       <div className="page roster-page">
-        <p>Loading...</p>
+        <LoadingSkeleton variant="list" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="page roster-page">
+        <ErrorMessage message={error} onRetry={loadPitchers} />
       </div>
     )
   }

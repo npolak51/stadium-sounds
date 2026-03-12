@@ -4,6 +4,7 @@ const TABS = [
   { path: '/tracking', label: 'Tracking' },
   { path: '/reports', label: 'Reports' },
   { path: '/roster', label: 'Roster' },
+  { path: '/data', label: 'Data' },
 ] as const
 
 export function TabBar() {
@@ -15,6 +16,9 @@ export function TabBar() {
     }
     if (t.path === '/reports') {
       return location.pathname === '/reports' || location.pathname.startsWith('/reports/')
+    }
+    if (t.path === '/data') {
+      return location.pathname === '/data'
     }
     return location.pathname.startsWith(t.path)
   })

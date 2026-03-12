@@ -1,17 +1,9 @@
 import type { Game, PitchType } from '../types'
 import { getPitchStatsByType } from '../lib/stats'
+import { PITCH_ABBREV } from '../lib/constants'
 
 interface Props {
   game: Game
-}
-
-const PITCH_LABELS: Record<PitchType, string> = {
-  fastball: 'FB',
-  curveball: 'CB',
-  slider: 'SL',
-  changeup: 'CH',
-  cutter: 'CU',
-  splitter: 'SPL',
 }
 
 export function PitchPerformance({ game }: Props) {
@@ -39,7 +31,7 @@ export function PitchPerformance({ game }: Props) {
             s.thrown > 0 ? ((s.strikes / s.thrown) * 100).toFixed(0) : '0'
           return (
             <div key={type} className="pitch-row">
-              <span className="pitch-type">{PITCH_LABELS[type]}</span>
+              <span className="pitch-type">{PITCH_ABBREV[type]}</span>
               <span className="pitch-count">{s.thrown}</span>
               <span className="pitch-strikes">{s.strikes}S</span>
               <span className="pitch-balls">{s.balls}B</span>

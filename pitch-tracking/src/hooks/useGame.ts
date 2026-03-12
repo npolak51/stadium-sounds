@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Game, AtBat, Pitch, Batter, LineupBatter } from '../types'
-import { getGame, saveGame, saveBatter, generateId } from '../lib/storage'
+import { getGame, saveGame, saveBatter, getPitcher, generateId } from '../lib/storage'
 
 function defaultLineup(game: Game) {
   if (game.opposingLineup?.length) return game.opposingLineup
@@ -14,28 +14,47 @@ function defaultLineup(game: Game) {
 export function useGame(gameId: string | null) {
   const [game, setGame] = useState<Game | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!gameId) {
       setGame(null)
       setLoading(false)
+      setError(null)
       return
     }
-    getGame(gameId).then((g) => {
-      if (g && !g.opposingLineup?.length) {
-        g = { ...g, opposingLineup: defaultLineup(g as Game) }
-      }
-      setGame(g ?? null)
-      setLoading(false)
-    })
+    setError(null)
+    getGame(gameId)
+      .then((g) => {
+        if (g && !g.opposingLineup?.length) {
+          g = { ...g, opposingLineup: defaultLineup(g as Game) }
+        }
+        setGame(g ?? null)
+        setLoading(false)
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to load game')
+        setLoading(false)
+      })
   }, [gameId])
+
+  const saveGameSafe = useCallback(async (updated: Game) => {
+    setSaveError(null)
+    try {
+      await saveGame(updated)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save')
+      throw err
+    }
+  }, [])
 
   const updateGame = useCallback(async (updates: Partial<Game>) => {
     if (!game) return
     const updated = { ...game, ...updates }
     setGame(updated)
-    await saveGame(updated)
-  }, [game])
+    await saveGameSafe(updated)
+  }, [game, saveGameSafe])
 
   const addAtBat = useCallback(
     async (
@@ -74,10 +93,10 @@ export function useGame(gameId: string | null) {
       const atBats = [...game.atBats, atBat]
       const updated = { ...game, atBats, opposingLineup: lineup }
       setGame(updated)
-      await saveGame(updated)
+      await saveGameSafe(updated)
       return atBat
     },
-    [game]
+    [game, saveGameSafe]
   )
 
   const substituteBatter = useCallback(
@@ -112,9 +131,9 @@ export function useGame(gameId: string | null) {
       )
       const updated = { ...game, atBats, opposingLineup: lineup }
       setGame(updated)
-      await saveGame(updated)
+      await saveGameSafe(updated)
     },
-    [game]
+    [game, saveGameSafe]
   )
 
   const replaceBatterWithOriginal = useCallback(
@@ -149,9 +168,9 @@ export function useGame(gameId: string | null) {
       )
       const updated = { ...game, atBats, opposingLineup: lineup }
       setGame(updated)
-      await saveGame(updated)
+      await saveGameSafe(updated)
     },
-    [game]
+    [game, saveGameSafe]
   )
 
   const addPitch = useCallback(
@@ -163,6 +182,7 @@ export function useGame(gameId: string | null) {
         countBefore?: { balls: number; strikes: number }
         contactTrajectory?: Pitch['contactTrajectory']
         contactType?: Pitch['contactType']
+        hitLocation?: Pitch['hitLocation']
         timing?: Pitch['timing']
       }
     ) => {
@@ -181,6 +201,7 @@ export function useGame(gameId: string | null) {
         timestamp: new Date().toISOString(),
         contactTrajectory: data.contactTrajectory,
         contactType: data.contactType,
+        hitLocation: data.hitLocation,
         timing: data.timing,
       }
 
@@ -189,35 +210,76 @@ export function useGame(gameId: string | null) {
       )
       const updated = { ...game, atBats }
       setGame(updated)
-      await saveGame(updated)
-      return pitch
+      await saveGameSafe(updated)
+      return { pitch, updatedGame: updated }
     },
-    [game]
+    [game, saveGameSafe]
   )
 
   const completeAtBat = useCallback(
-    async (atBatId: string, result: AtBat['result']) => {
-      if (!game) return
-      const atBats = game.atBats.map((a) =>
+    async (atBatId: string, result: AtBat['result'], gameToUse?: Game) => {
+      const baseGame = gameToUse ?? game
+      if (!baseGame) return
+      const atBats = baseGame.atBats.map((a) =>
         a.id === atBatId ? { ...a, result } : a
       )
-      const updated = { ...game, atBats }
+      const updated = { ...baseGame, atBats }
       setGame(updated)
-      await saveGame(updated)
+      await saveGameSafe(updated)
     },
-    [game]
+    [game, saveGameSafe]
   )
 
   const completeGame = useCallback(async () => {
     if (!game) return
     const updated = { ...game, isComplete: true }
     setGame(updated)
-    await saveGame(updated)
-  }, [game])
+    await saveGameSafe(updated)
+  }, [game, saveGameSafe])
+
+  const removeLastPitch = useCallback(
+    async (atBatId?: string): Promise<string | null> => {
+      if (!game || game.atBats.length === 0) return null
+      const targetAtBat = atBatId
+        ? game.atBats.find((a) => a.id === atBatId)
+        : game.atBats[game.atBats.length - 1]
+      if (!targetAtBat || targetAtBat.pitches.length === 0) return null
+
+      const newPitches = targetAtBat.pitches.slice(0, -1)
+      const hadResult = targetAtBat.result != null
+      const atBats = game.atBats.map((a) =>
+        a.id === targetAtBat.id
+          ? { ...a, pitches: newPitches, result: undefined }
+          : a
+      )
+      const updated = { ...game, atBats }
+      setGame(updated)
+      await saveGameSafe(updated)
+      return hadResult ? targetAtBat.id : null
+    },
+    [game, saveGameSafe]
+  )
+
+  const changePitcher = useCallback(
+    async (pitcherId: string) => {
+      if (!game) return
+      const pitcher = await getPitcher(pitcherId)
+      if (!pitcher) return
+      const updated = { ...game, pitcherId, pitcher }
+      setGame(updated)
+      await saveGameSafe(updated)
+    },
+    [game, saveGameSafe]
+  )
+
+  const clearSaveError = useCallback(() => setSaveError(null), [])
 
   return {
     game,
     loading,
+    error,
+    saveError,
+    clearSaveError,
     updateGame,
     addAtBat,
     addPitch,
@@ -225,5 +287,7 @@ export function useGame(gameId: string | null) {
     completeGame,
     substituteBatter,
     replaceBatterWithOriginal,
+    removeLastPitch,
+    changePitcher,
   }
 }
