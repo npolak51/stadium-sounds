@@ -43,7 +43,11 @@ export default function EditAssignmentModal({ assignment, onSave, onClose }: Edi
   }, [assignment.filePath])
 
   const handleSave = () => {
-    const end = endTime > startTime ? endTime : startTime + 60
+    const fallbackDur =
+      assignment.purpose === 'In-Game Playlist' && fileDuration != null && fileDuration > 0
+        ? fileDuration
+        : assignment.duration || 60
+    const end = endTime > startTime ? endTime : startTime + Math.max(1, fallbackDur)
     const updated: AudioAssignment = {
       ...assignment,
       startTime,

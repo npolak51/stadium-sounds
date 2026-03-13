@@ -340,11 +340,20 @@ function AudioTab({
 
   useEffect(() => {
     if (!selectedFile) return
-    const dur = fileDuration ?? 60
     setStartTime(0)
-    setDuration(dur)
-    setEndTime(dur)
-  }, [selectedFile, fileDuration])
+    if (purpose === 'In-Game Playlist') {
+      // In-Game Playlist: use full file length only when we have it (no 60 fallback)
+      if (fileDuration != null && fileDuration > 0) {
+        setDuration(fileDuration)
+        setEndTime(fileDuration)
+      }
+    } else {
+      // Sound Effect: use file duration or default
+      const dur = fileDuration ?? DEFAULT_DURATION
+      setDuration(dur)
+      setEndTime(dur)
+    }
+  }, [selectedFile, fileDuration, purpose])
 
   const handleImportFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -368,7 +377,8 @@ function AudioTab({
     if (!selectedFile) return
     const fileInfo = storedFiles.find(f => f.path === selectedFile)
     const fileName = fileInfo?.fileName ?? selectedFile.split('_').slice(1).join('_')
-    const end = endTime > startTime ? endTime : startTime + 60
+    const fallbackDur = purpose === 'In-Game Playlist' ? (fileDuration ?? 0) : 60
+    const end = endTime > startTime ? endTime : startTime + Math.max(1, fallbackDur)
     const assignment: AudioAssignment = {
       id: generateId(),
       fileName,
@@ -568,7 +578,14 @@ function AudioTab({
         >
           {isPreviewing ? 'Playing…' : 'Preview Audio'}
         </button>
-        <button className="btn-primary" onClick={handleCreateAssignment} disabled={!selectedFile}>
+        <button
+          className="btn-primary"
+          onClick={handleCreateAssignment}
+          disabled={
+            !selectedFile ||
+            (purpose === 'In-Game Playlist' && (fileDuration == null || fileDuration <= 0))
+          }
+        >
           Add Assignment
         </button>
       </div>

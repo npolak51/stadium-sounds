@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAppData } from '../context/AppDataContext'
 import { getAllStoredFiles } from '../lib/audioStorage'
+import { getAudioDuration } from '../lib/audioService'
 import type { SavedPlaylist, AudioAssignment } from '../types'
 import './PlaylistsView.css'
 
@@ -8,19 +9,20 @@ function generateId() {
   return crypto.randomUUID()
 }
 
-function createAssignmentFromFile(
+async function createAssignmentFromFile(
   path: string,
   fileName: string,
   order: number
-): AudioAssignment {
+): Promise<AudioAssignment> {
+  const duration = Math.max(1, (await getAudioDuration(path)) || 1)
   return {
     id: generateId(),
     fileName,
     filePath: path,
     purpose: 'In-Game Playlist',
     startTime: 0,
-    endTime: 60,
-    duration: 60,
+    endTime: duration,
+    duration,
     fadeIn: false,
     fadeOut: false,
     playlistOrder: order
@@ -85,15 +87,17 @@ export default function PlaylistsView() {
         {mode === 'build' && (
           <BuildPlaylistForm
             storedFiles={storedFiles}
-            onSave={(name, selectedPaths) => {
-              const assignments = selectedPaths.map((path, i) => {
-                const file = storedFiles.find(f => f.path === path)
-                return createAssignmentFromFile(
-                  path,
-                  file?.fileName ?? path.split('_').slice(1).join('_'),
-                  i
-                )
-              })
+            onSave={async (name, selectedPaths) => {
+              const assignments = await Promise.all(
+                selectedPaths.map((path, i) => {
+                  const file = storedFiles.find(f => f.path === path)
+                  return createAssignmentFromFile(
+                    path,
+                    file?.fileName ?? path.split('_').slice(1).join('_'),
+                    i
+                  )
+                })
+              )
               addAssignmentsToPlaylist(assignments, name)
               setMode('list')
             }}
@@ -185,11 +189,12 @@ function BuildPlaylistForm({
   onCancel
 }: {
   storedFiles: { path: string; fileName: string }[]
-  onSave: (name: string, selectedPaths: string[]) => void
+  onSave: (name: string, selectedPaths: string[]) => void | Promise<void>
   onCancel: () => void
 }) {
   const [name, setName] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [isSaving, setIsSaving] = useState(false)
 
   const toggleFile = (path: string) => {
     setSelected(prev => {
@@ -208,9 +213,14 @@ function BuildPlaylistForm({
     }
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim() || selected.size === 0) return
-    onSave(name.trim(), Array.from(selected))
+    setIsSaving(true)
+    try {
+      await onSave(name.trim(), Array.from(selected))
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -252,9 +262,9 @@ function BuildPlaylistForm({
         <button
           className="btn-primary"
           onClick={handleSave}
-          disabled={!name.trim() || selected.size === 0}
+          disabled={!name.trim() || selected.size === 0 || isSaving}
         >
-          Create Playlist
+          {isSaving ? 'Creating…' : 'Create Playlist'}
         </button>
         <button className="btn-secondary" onClick={onCancel}>
           Cancel
@@ -302,21 +312,30 @@ function EditPlaylistForm({
     }))
   }
 
-  const addSongs = (paths: string[]) => {
-    const maxOrder = Math.max(-1, ...playlist.assignments.map(a => a.playlistOrder ?? 0))
-    const newItems = paths.map((path, i) => {
-      const file = storedFiles.find(f => f.path === path)
-      return createAssignmentFromFile(
-        path,
-        file?.fileName ?? path.split('_').slice(1).join('_'),
-        maxOrder + 1 + i
+  const [isAddingSongs, setIsAddingSongs] = useState(false)
+
+  const addSongs = async (paths: string[]) => {
+    setIsAddingSongs(true)
+    try {
+      const maxOrder = Math.max(-1, ...playlist.assignments.map(a => a.playlistOrder ?? 0))
+      const newItems = await Promise.all(
+        paths.map((path, i) => {
+          const file = storedFiles.find(f => f.path === path)
+          return createAssignmentFromFile(
+            path,
+            file?.fileName ?? path.split('_').slice(1).join('_'),
+            maxOrder + 1 + i
+          )
+        })
       )
-    })
-    setPlaylist(p => ({
-      ...p,
-      assignments: [...p.assignments, ...newItems]
-    }))
-    setShowAddSongs(false)
+      setPlaylist(p => ({
+        ...p,
+        assignments: [...p.assignments, ...newItems]
+      }))
+      setShowAddSongs(false)
+    } finally {
+      setIsAddingSongs(false)
+    }
   }
 
   return (
@@ -346,6 +365,7 @@ function EditPlaylistForm({
           storedFiles={storedFiles}
           existingPaths={new Set(playlist.assignments.map(a => a.filePath))}
           onAdd={addSongs}
+          isAdding={isAddingSongs}
         />
       )}
 
@@ -425,11 +445,13 @@ function EditPlaylistForm({
 function AddSongsPicker({
   storedFiles,
   existingPaths,
-  onAdd
+  onAdd,
+  isAdding
 }: {
   storedFiles: { path: string; fileName: string }[]
   existingPaths: Set<string>
-  onAdd: (paths: string[]) => void
+  onAdd: (paths: string[]) => void | Promise<void>
+  isAdding?: boolean
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -464,10 +486,10 @@ function AddSongsPicker({
           </div>
           <button
             className="btn-primary btn-small"
-            onClick={() => onAdd(Array.from(selected))}
-            disabled={selected.size === 0}
+            onClick={async () => await onAdd(Array.from(selected))}
+            disabled={selected.size === 0 || isAdding}
           >
-            Add {selected.size} song{selected.size !== 1 ? 's' : ''}
+            {isAdding ? 'Adding…' : `Add ${selected.size} song${selected.size !== 1 ? 's' : ''}`}
           </button>
         </>
       )}
