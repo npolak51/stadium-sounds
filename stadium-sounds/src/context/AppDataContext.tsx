@@ -55,11 +55,12 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     ])
     const playersData = p.map(pr => ({ ...pr, team: pr.team ?? 'Varsity' }))
     const playerMap = new Map(playersData.map(pr => [pr.id, pr]))
-    // Ensure Player Music assignments have playerOrder (migration for existing data)
+    // Ensure Player Music and Pitcher Entrance assignments have playerOrder (migration for existing data)
     const teamOrderCount = new Map<string, number>()
     const assignmentsData = a.map(assignment => {
-      if (assignment.purpose === 'Player Music' && assignment.playerOrder == null) {
-        const team = assignment.player ? (playerMap.get(assignment.player)?.team ?? 'Varsity') : 'Varsity'
+      const isPlayerAssignment = assignment.purpose === 'Player Music' || assignment.purpose === 'Pitcher Entrance'
+      if (isPlayerAssignment && assignment.playerOrder == null && assignment.player) {
+        const team = playerMap.get(assignment.player)?.team ?? 'Varsity'
         const order = teamOrderCount.get(team) ?? 0
         teamOrderCount.set(team, order + 1)
         return { ...assignment, playerOrder: order }
@@ -103,17 +104,20 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const removePlayer = useCallback((player: Player) => {
     setPlayers(prev => prev.filter(p => p.id !== player.id))
-    setAssignments(prev => prev.filter(a => a.purpose !== 'Player Music' || a.player !== player.id))
+    setAssignments(prev =>
+      prev.filter(a => !a.player || a.player !== player.id)
+    )
   }, [])
 
   const addAssignment = useCallback((assignment: AudioAssignment) => {
     setAssignments(prev => {
       let next = assignment
-      if (assignment.purpose === 'Player Music' && assignment.player) {
+      const isPlayerMusic = assignment.purpose === 'Player Music' || assignment.purpose === 'Pitcher Entrance'
+      if (isPlayerMusic && assignment.player) {
         const player = players.find(p => p.id === assignment.player)
         const team = player?.team ?? 'Varsity'
         const maxOrder = prev
-          .filter(a => a.purpose === 'Player Music' && (players.find(p => p.id === a.player)?.team ?? 'Varsity') === team)
+          .filter(a => (a.purpose === 'Player Music' || a.purpose === 'Pitcher Entrance') && (players.find(p => p.id === a.player)?.team ?? 'Varsity') === team)
           .reduce((m, a) => Math.max(m, a.playerOrder ?? -1), -1)
         next = { ...assignment, playerOrder: maxOrder + 1 }
       }
@@ -288,7 +292,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     const teamOrderCount = new Map<string, number>()
     const assignmentsData = config.assignments.map(a => {
       const assignment = { ...a, id: a.id || generateId() }
-      if (assignment.purpose === 'Player Music' && assignment.playerOrder == null && assignment.player) {
+      const isPlayerAssignment = assignment.purpose === 'Player Music' || assignment.purpose === 'Pitcher Entrance'
+      if (isPlayerAssignment && assignment.playerOrder == null && assignment.player) {
         const team = playerMap.get(assignment.player)?.team ?? 'Varsity'
         const order = teamOrderCount.get(team) ?? 0
         teamOrderCount.set(team, order + 1)

@@ -5,7 +5,7 @@ import type { DBSchema, IDBPDatabase } from 'idb'
 interface AudioFilesDB extends DBSchema {
   files: {
     key: string
-    value: { path: string; blob: Blob; fileName: string; hash?: string }
+    value: { path: string; blob: Blob; fileName: string; hash?: string; createdAt?: number }
   }
   hashes: {
     key: string // SHA-256 hash
@@ -55,7 +55,7 @@ export async function storeAudioFile(
     return { stored: false }
   }
 
-  await db.put('files', { path, blob, fileName, hash })
+  await db.put('files', { path, blob, fileName, hash, createdAt: Date.now() })
   await db.put('hashes', { hash, path })
   return { stored: true }
 }
@@ -91,6 +91,8 @@ export async function getStorageUsage(): Promise<{ used: number; fileCount: numb
 export async function getAllStoredFiles(): Promise<{ path: string; fileName: string }[]> {
   const db = await getAudioDB()
   const records = await db.getAll('files')
+  // Newest imports first (records without createdAt sort last)
+  records.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
   return records.map(r => ({ path: r.path, fileName: r.fileName }))
 }
 

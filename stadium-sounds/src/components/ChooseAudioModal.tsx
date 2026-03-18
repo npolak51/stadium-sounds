@@ -12,6 +12,7 @@ function generateId() {
 
 interface ChooseAudioModalProps {
   playerId: string
+  purpose: 'Player Music' | 'Pitcher Entrance'
   initialAssignment?: AudioAssignment | null
   onSave: (assignment: AudioAssignment) => void
   onClose: () => void
@@ -20,8 +21,14 @@ interface ChooseAudioModalProps {
 
 const DEFAULT_DURATION = 15
 
+const MODAL_TITLES: Record<'Player Music' | 'Pitcher Entrance', { choose: string; edit: string }> = {
+  'Player Music': { choose: 'Choose Walkup Music', edit: 'Edit Walkup Music' },
+  'Pitcher Entrance': { choose: 'Choose Pitcher Entrance', edit: 'Edit Pitcher Entrance' }
+}
+
 export default function ChooseAudioModal({
   playerId,
+  purpose,
   initialAssignment,
   onSave,
   onClose,
@@ -84,22 +91,28 @@ export default function ChooseAudioModal({
     if (!selectedFile) return
     if (!initialAssignment || selectedFile !== initialAssignment.filePath) {
       setStartTime(0)
-      setDuration(DEFAULT_DURATION)
-      setEndTime(DEFAULT_DURATION)
+      if (purpose === 'Pitcher Entrance' && fileDuration != null && fileDuration > 0) {
+        setDuration(fileDuration)
+        setEndTime(fileDuration)
+      } else {
+        setDuration(DEFAULT_DURATION)
+        setEndTime(DEFAULT_DURATION)
+      }
     }
-  }, [selectedFile, initialAssignment])
+  }, [selectedFile, initialAssignment, purpose, fileDuration])
 
   const handleSave = () => {
     if (!selectedFile) return
     const fileInfo = storedFiles.find(f => f.path === selectedFile)
     const fileName = fileInfo?.fileName ?? selectedFile.split('_').slice(1).join('_')
-    const end = endTime > startTime ? endTime : startTime + 60
+    const fallbackDur = purpose === 'Pitcher Entrance' ? (fileDuration ?? 0) : 60
+    const end = endTime > startTime ? endTime : startTime + Math.max(1, fallbackDur)
     const assignment: AudioAssignment = {
       ...(initialAssignment ?? {}),
       id: initialAssignment?.id ?? generateId(),
       fileName,
       filePath: selectedFile,
-      purpose: 'Player Music',
+      purpose,
       startTime,
       endTime: end,
       duration: end - startTime,
@@ -114,7 +127,7 @@ export default function ChooseAudioModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal choose-audio-modal" onClick={e => e.stopPropagation()}>
-        <h3>{initialAssignment ? 'Edit Audio' : 'Choose Audio'}</h3>
+        <h3>{initialAssignment ? MODAL_TITLES[purpose].edit : MODAL_TITLES[purpose].choose}</h3>
         <input
           ref={fileInputRef}
           type="file"

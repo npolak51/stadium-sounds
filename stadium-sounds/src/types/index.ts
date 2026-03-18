@@ -13,7 +13,7 @@ export type SoundEffectCategory = 'Pre/Postgame' | 'Offense' | 'Defense'
 
 export type PlaylistRepeatMode = 'None' | 'All' | 'One'
 
-export type PurposeType = 'Player Music' | 'Sound Effect' | 'In-Game Playlist'
+export type PurposeType = 'Player Music' | 'Pitcher Entrance' | 'Sound Effect' | 'In-Game Playlist'
 
 export interface AudioAssignment {
   id: string

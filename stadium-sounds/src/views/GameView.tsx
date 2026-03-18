@@ -97,10 +97,12 @@ export default function GameView() {
 
   const [playbackState, setPlaybackState] = useState<PlaybackState | null>(null)
   const [currentPlayingPlayerId, setCurrentPlayingPlayerId] = useState<string | null>(null)
+  const [currentPlayingPitcherEntranceId, setCurrentPlayingPitcherEntranceId] = useState<string | null>(null)
   const [currentPlayingSoundEffectId, setCurrentPlayingSoundEffectId] = useState<string | null>(null)
   const [currentPlayingPlaylistId, setCurrentPlayingPlaylistId] = useState<string | null>(null)
   const [selectedSoundCategory, setSelectedSoundCategory] = useState<SoundEffectCategory>('Pre/Postgame')
   const [selectedTeam, setSelectedTeam] = useState<TeamType>('Varsity')
+  const [selectedPitcherTeam, setSelectedPitcherTeam] = useState<TeamType>('Varsity')
   const [shuffleEnabled, setShuffleEnabled] = useState(false)
   const [repeatMode, setRepeatMode] = useState<'None' | 'All' | 'One'>('None')
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(0)
@@ -110,6 +112,9 @@ export default function GameView() {
 
   const playerMusic = [...assignments]
     .filter(a => a.purpose === 'Player Music')
+    .sort((a, b) => (a.playerOrder ?? 0) - (b.playerOrder ?? 0))
+  const pitcherEntrance = [...assignments]
+    .filter(a => a.purpose === 'Pitcher Entrance')
     .sort((a, b) => (a.playerOrder ?? 0) - (b.playerOrder ?? 0))
   const soundEffects = assignments.filter(a => a.purpose === 'Sound Effect')
   const playlistItems = [...assignments]
@@ -129,6 +134,15 @@ export default function GameView() {
     .filter(Boolean)
   const teamAssignmentIds = teamAssignments.map(a => a.id)
 
+  const pitcherTeamAssignments = pitcherEntrance.filter(a => {
+    const p = players.find(pl => pl.id === a.player)
+    return p?.team === selectedPitcherTeam
+  })
+  const pitchersForTeam = pitcherTeamAssignments
+    .map(a => players.find(p => p.id === a.player)!)
+    .filter(Boolean)
+  const pitcherAssignmentIds = pitcherTeamAssignments.map(a => a.id)
+
   const sensors = useSensors(
     useSensor(TouchSensor, {
       activationConstraint: { delay: 250, tolerance: 5 }
@@ -139,6 +153,11 @@ export default function GameView() {
 
   const handlePlayerDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(event.active.id as string)
+  }, [])
+
+  const [activePitcherDragId, setActivePitcherDragId] = useState<string | null>(null)
+  const handlePitcherDragStart = useCallback((event: DragStartEvent) => {
+    setActivePitcherDragId(event.active.id as string)
   }, [])
 
   const handlePlayerDragEnd = useCallback(
@@ -155,6 +174,20 @@ export default function GameView() {
     [teamAssignmentIds, reorderPlayerMusic]
   )
 
+  const handlePitcherDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setActivePitcherDragId(null)
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      const oldIndex = pitcherAssignmentIds.indexOf(active.id as string)
+      const newIndex = pitcherAssignmentIds.indexOf(over.id as string)
+      if (oldIndex < 0 || newIndex < 0) return
+      const newOrder = arrayMove(pitcherAssignmentIds, oldIndex, newIndex)
+      reorderPlayerMusic(newOrder)
+    },
+    [pitcherAssignmentIds, reorderPlayerMusic]
+  )
+
   useEffect(() => {
     const unsub = subscribe(setPlaybackState)
     return () => { unsub() }
@@ -162,7 +195,7 @@ export default function GameView() {
 
   const playablePaths = assignments
     .filter(
-      a => a.purpose === 'Player Music' || a.purpose === 'Sound Effect' || a.purpose === 'In-Game Playlist'
+      a => a.purpose === 'Player Music' || a.purpose === 'Pitcher Entrance' || a.purpose === 'Sound Effect' || a.purpose === 'In-Game Playlist'
     )
     .map(a => a.filePath)
     .filter(Boolean)
@@ -186,15 +219,23 @@ export default function GameView() {
       await play(a)
       if (a.purpose === 'Player Music') {
         setCurrentPlayingPlayerId(a.player ?? null)
+        setCurrentPlayingPitcherEntranceId(null)
+        setCurrentPlayingSoundEffectId(null)
+        setCurrentPlayingPlaylistId(null)
+      } else if (a.purpose === 'Pitcher Entrance') {
+        setCurrentPlayingPlayerId(null)
+        setCurrentPlayingPitcherEntranceId(a.id)
         setCurrentPlayingSoundEffectId(null)
         setCurrentPlayingPlaylistId(null)
       } else if (a.purpose === 'Sound Effect') {
         setCurrentPlayingSoundEffectId(a.id)
         setCurrentPlayingPlayerId(null)
+        setCurrentPlayingPitcherEntranceId(null)
         setCurrentPlayingPlaylistId(null)
       } else {
         setCurrentPlayingPlaylistId(a.id)
         setCurrentPlayingPlayerId(null)
+        setCurrentPlayingPitcherEntranceId(null)
         setCurrentPlayingSoundEffectId(null)
       }
     } catch (e) {
@@ -209,6 +250,14 @@ export default function GameView() {
       if (assignment) playAssignment(assignment)
     },
     [playerMusic, playAssignment]
+  )
+
+  const handlePlayPitcherEntrance = useCallback(
+    (player: Player) => {
+      const assignment = pitcherEntrance.find(a => a.player === player.id)
+      if (assignment) playAssignment(assignment)
+    },
+    [pitcherEntrance, playAssignment]
   )
 
   const handlePlaySoundEffect = useCallback(
@@ -227,6 +276,7 @@ export default function GameView() {
   const handleStop = useCallback(() => {
     stop()
     setCurrentPlayingPlayerId(null)
+    setCurrentPlayingPitcherEntranceId(null)
     setCurrentPlayingSoundEffectId(null)
     setCurrentPlayingPlaylistId(null)
   }, [])
@@ -313,7 +363,7 @@ export default function GameView() {
       <div className={`game-grid ${!preloadReady ? 'preload-pending' : ''}`}>
         {/* Player lineup */}
         <section className="game-section">
-          <h2 className="section-title">Player Music</h2>
+          <h2 className="section-title">Walkup Songs</h2>
           <div className="sound-category-tabs">
             {TEAMS.map(team => (
               <button
@@ -378,40 +428,108 @@ export default function GameView() {
           </div>
         </section>
 
-        {/* Sound effects */}
-        <section className="game-section">
-          <h2 className="section-title">Sound Effects</h2>
-          <div className="sound-category-tabs">
-            {(['Pre/Postgame', 'Offense', 'Defense'] as const).map(cat => (
-              <button
-                key={cat}
-                className={`cat-tab ${selectedSoundCategory === cat ? 'active' : ''}`}
-                onClick={() => setSelectedSoundCategory(cat)}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-          <div className="sound-effect-grid">
-            {soundEffectsByCategory.map(a => {
-              const isActive = currentPlayingSoundEffectId === a.id
-              return (
+        {/* Sound Effects + Pitcher Entrance - stacked to match Player Music height */}
+        <div className="game-section-stack">
+          <section className="game-section game-section-half">
+            <h2 className="section-title">Sound Effects</h2>
+            <div className="sound-category-tabs">
+              {(['Pre/Postgame', 'Offense', 'Defense'] as const).map(cat => (
                 <button
-                  key={a.id}
-                  className={`sound-btn ${isActive ? 'active' : ''}`}
-                  onClick={() => handlePlaySoundEffect(a)}
-                  disabled={!preloadReady}
+                  key={cat}
+                  className={`cat-tab ${selectedSoundCategory === cat ? 'active' : ''}`}
+                  onClick={() => setSelectedSoundCategory(cat)}
                 >
-                  {a.soundEffectName || a.fileName.replace(/\.[^/.]+$/, '')}
-                  {isActive && <span className="playing-indicator">♪</span>}
+                  {cat}
                 </button>
-              )
-            })}
-            {soundEffectsByCategory.length === 0 && (
-              <p className="empty-hint">Add sound effects in Manage → Audio</p>
-            )}
-          </div>
-        </section>
+              ))}
+            </div>
+            <div className="sound-effect-grid">
+              {soundEffectsByCategory.map(a => {
+                const isActive = currentPlayingSoundEffectId === a.id
+                return (
+                  <button
+                    key={a.id}
+                    className={`sound-btn ${isActive ? 'active' : ''}`}
+                    onClick={() => handlePlaySoundEffect(a)}
+                    disabled={!preloadReady}
+                  >
+                    {a.soundEffectName || a.fileName.replace(/\.[^/.]+$/, '')}
+                    {isActive && <span className="playing-indicator">♪</span>}
+                  </button>
+                )
+              })}
+              {soundEffectsByCategory.length === 0 && (
+                <p className="empty-hint">Add sound effects in Manage → Audio</p>
+              )}
+            </div>
+          </section>
+
+          <section className="game-section game-section-half">
+            <h2 className="section-title">Pitcher Entrance</h2>
+            <div className="sound-category-tabs">
+              {TEAMS.map(team => (
+                <button
+                  key={team}
+                  className={`cat-tab ${selectedPitcherTeam === team ? 'active' : ''}`}
+                  onClick={() => setSelectedPitcherTeam(team)}
+                >
+                  {team}
+                </button>
+              ))}
+            </div>
+            <div className="player-list">
+              {pitcherAssignmentIds.length > 0 ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragStart={handlePitcherDragStart}
+                  onDragEnd={handlePitcherDragEnd}
+                >
+                  <SortableContext
+                    items={pitcherAssignmentIds}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {pitcherTeamAssignments.map((assignment, index) => {
+                      const player = pitchersForTeam[index]
+                      if (!player) return null
+                      const isActive = currentPlayingPitcherEntranceId === assignment.id
+                      return (
+                        <SortablePlayerRow
+                          key={assignment.id}
+                          assignmentId={assignment.id}
+                          player={player}
+                          isActive={isActive}
+                          preloadReady={preloadReady}
+                          onPlay={() => handlePlayPitcherEntrance(player)}
+                        />
+                      )
+                    })}
+                  </SortableContext>
+                  <DragOverlay dropAnimation={null}>
+                    {activePitcherDragId ? (
+                      (() => {
+                        const idx = pitcherTeamAssignments.findIndex(a => a.id === activePitcherDragId)
+                        const player = idx >= 0 ? pitchersForTeam[idx] : null
+                        if (!player) return null
+                        return (
+                          <div className="player-row player-row-dragging">
+                            <div className="player-drag-handle">⋮⋮</div>
+                            <div className="player-btn">
+                              <span className="player-number">#{player.number}</span>
+                              <span className="player-name">{player.name}</span>
+                            </div>
+                          </div>
+                        )
+                      })()
+                    ) : null}
+                  </DragOverlay>
+                </DndContext>
+              ) : (
+                <p className="empty-hint">Assign pitcher entrance music in Manage → Players</p>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
 
       {/* In-game playlist */}

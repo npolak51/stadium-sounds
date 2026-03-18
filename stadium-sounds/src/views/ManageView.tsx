@@ -42,6 +42,7 @@ export default function ManageView() {
   } = useAppData()
 
   const [chooseAudioPlayerId, setChooseAudioPlayerId] = useState<string | null>(null)
+  const [chooseAudioType, setChooseAudioType] = useState<'Player Music' | 'Pitcher Entrance'>('Player Music')
 
   const [storageInfo, setStorageInfo] = useState<{ used: number; fileCount: number } | null>(null)
   const [uploadFeedback, setUploadFeedback] = useState<{
@@ -66,7 +67,9 @@ export default function ManageView() {
     if (existingById) {
       updateAssignment(assignment)
     } else {
-      const existing = assignments.find(a => a.purpose === 'Player Music' && a.player === assignment.player)
+      const existing = assignments.find(
+        a => a.purpose === assignment.purpose && a.player === assignment.player
+      )
       if (existing) removeAssignment(existing)
       addAssignment(assignment)
     }
@@ -126,15 +129,23 @@ export default function ManageView() {
           addPlayer={addPlayer}
           updatePlayer={updatePlayer}
           removePlayer={removePlayer}
-          onChooseAudio={setChooseAudioPlayerId}
+          onChooseWalkupMusic={(playerId) => {
+            setChooseAudioType('Player Music')
+            setChooseAudioPlayerId(playerId)
+          }}
+          onChoosePitcherEntrance={(playerId) => {
+            setChooseAudioType('Pitcher Entrance')
+            setChooseAudioPlayerId(playerId)
+          }}
         />
       )}
 
       {chooseAudioPlayerId && (
         <ChooseAudioModal
           playerId={chooseAudioPlayerId}
+          purpose={chooseAudioType}
           initialAssignment={assignments.find(
-            a => a.purpose === 'Player Music' && a.player === chooseAudioPlayerId
+            a => a.purpose === chooseAudioType && a.player === chooseAudioPlayerId
           )}
           onSave={handleSavePlayerAudio}
           onClose={() => setChooseAudioPlayerId(null)}
@@ -166,16 +177,19 @@ function PlayersTab({
   addPlayer,
   updatePlayer,
   removePlayer,
-  onChooseAudio
+  onChooseWalkupMusic,
+  onChoosePitcherEntrance
 }: {
   players: Player[]
   assignments: AudioAssignment[]
   addPlayer: (name: string, number: string, team: TeamType) => void
   updatePlayer: (player: Player, name: string, number: string, team: TeamType) => void
   removePlayer: (player: Player) => void
-  onChooseAudio: (playerId: string) => void
+  onChooseWalkupMusic: (playerId: string) => void
+  onChoosePitcherEntrance: (playerId: string) => void
 }) {
   const playerMusic = assignments.filter(a => a.purpose === 'Player Music')
+  const pitcherEntrance = assignments.filter(a => a.purpose === 'Pitcher Entrance')
 
   return (
     <section className="manage-section">
@@ -187,13 +201,15 @@ function PlayersTab({
               <th>Jersey #</th>
               <th>Name</th>
               <th>Team</th>
-              <th>Choose Audio</th>
+              <th>Walkup Music</th>
+              <th>Pitcher Entrance</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {players.map(p => {
-              const assignment = playerMusic.find(a => a.player === p.id)
+              const walkupAssignment = playerMusic.find(a => a.player === p.id)
+              const pitcherAssignment = pitcherEntrance.find(a => a.player === p.id)
               return (
                 <tr key={p.id}>
                   <td>
@@ -233,10 +249,19 @@ function PlayersTab({
                   <td>
                     <button
                       type="button"
-                      className={assignment ? 'btn-primary btn-small' : 'btn-secondary btn-small'}
-                      onClick={() => onChooseAudio(p.id)}
+                      className={walkupAssignment ? 'btn-primary btn-small' : 'btn-secondary btn-small'}
+                      onClick={() => onChooseWalkupMusic(p.id)}
                     >
-                      {assignment ? 'Edit' : 'Choose Audio'}
+                      {walkupAssignment ? 'Edit' : 'Choose'}
+                    </button>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className={pitcherAssignment ? 'btn-primary btn-small' : 'btn-secondary btn-small'}
+                      onClick={() => onChoosePitcherEntrance(p.id)}
+                    >
+                      {pitcherAssignment ? 'Edit' : 'Choose'}
                     </button>
                   </td>
                   <td>
@@ -430,7 +455,7 @@ function AudioTab({
   }
 
   const handleClearAll = async () => {
-    if (!confirm('Are you sure? This will permanently delete all audio files and remove all assignments (Sound Effects, Playlist, and Player Music).')) return
+    if (!confirm('Are you sure? This will permanently delete all audio files and remove all assignments (Sound Effects, Playlist, Player Music, and Pitcher Entrance).')) return
     for (const a of assignments) {
       removeAssignment(a)
     }
@@ -593,7 +618,7 @@ function AudioTab({
       <div className="assignments-list">
         <h3>Existing Assignments</h3>
         {assignments
-          .filter(a => a.purpose !== 'Player Music')
+          .filter(a => a.purpose !== 'Player Music' && a.purpose !== 'Pitcher Entrance')
           .map(a => (
             <div key={a.id} className="assignment-row">
               <span>
@@ -612,7 +637,7 @@ function AudioTab({
               <button className="btn-small danger" onClick={() => removeAssignment(a)}>Remove</button>
             </div>
           ))}
-        {assignments.filter(a => a.purpose !== 'Player Music').length === 0 && (
+        {assignments.filter(a => a.purpose !== 'Player Music' && a.purpose !== 'Pitcher Entrance').length === 0 && (
           <p className="empty-hint">Create assignments above after importing audio files.</p>
         )}
       </div>
