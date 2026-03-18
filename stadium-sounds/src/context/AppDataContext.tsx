@@ -9,6 +9,7 @@ import {
 import type { ReactNode } from 'react'
 import type { Player, AudioAssignment, SavedPlaylist, AppConfiguration, TeamType } from '../types'
 import * as db from '../lib/db'
+import { getAudioDuration } from '../lib/audioService'
 
 interface AppDataContextValue {
   players: Player[]
@@ -25,7 +26,7 @@ interface AppDataContextValue {
   normalizePlaylistOrder: () => void
   setPlaylistOrder: (assignment: AudioAssignment) => void
   saveCurrentPlaylist: (name: string) => void
-  loadPlaylist: (playlist: SavedPlaylist) => void
+  loadPlaylist: (playlist: SavedPlaylist) => Promise<void>
   updatePlaylist: (playlist: SavedPlaylist) => void
   deletePlaylist: (playlist: SavedPlaylist) => void
   addAssignmentsToPlaylist: (assignments: AudioAssignment[], playlistName: string) => void
@@ -199,15 +200,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     setSavedPlaylists(prev => [...prev, playlist])
   }, [assignments])
 
-  const loadPlaylist = useCallback((playlist: SavedPlaylist) => {
+  const loadPlaylist = useCallback(async (playlist: SavedPlaylist) => {
+    const withFullDuration = await Promise.all(
+      playlist.assignments.map(async (a, i) => {
+        const fileDuration = await getAudioDuration(a.filePath)
+        const duration = Math.max(1, fileDuration ?? a.duration ?? 1)
+        return {
+          ...a,
+          id: generateId(),
+          playlistOrder: i,
+          startTime: 0,
+          endTime: duration,
+          duration
+        }
+      })
+    )
     setAssignments(prev => {
       const nonPlaylist = prev.filter(a => a.purpose !== 'In-Game Playlist')
-      const withOrder = playlist.assignments.map((a, i) => ({
-        ...a,
-        id: generateId(),
-        playlistOrder: i
-      }))
-      return [...nonPlaylist, ...withOrder]
+      return [...nonPlaylist, ...withFullDuration]
     })
   }, [])
 

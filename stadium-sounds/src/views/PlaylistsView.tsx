@@ -52,8 +52,8 @@ export default function PlaylistsView() {
     getAllStoredFiles().then(setStoredFiles)
   }, [mode])
 
-  const handleLoad = (p: SavedPlaylist) => {
-    loadPlaylist(p)
+  const handleLoad = async (p: SavedPlaylist) => {
+    await loadPlaylist(p)
   }
 
   const handleDelete = (p: SavedPlaylist) => {

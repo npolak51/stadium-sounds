@@ -281,8 +281,8 @@ export default function GameView() {
     setCurrentPlayingPlaylistId(null)
   }, [])
 
-  const handleLoadPlaylist = useCallback((p: SavedPlaylist) => {
-    loadPlaylist(p)
+  const handleLoadPlaylist = useCallback(async (p: SavedPlaylist) => {
+    await loadPlaylist(p)
     setShowLoadPlaylist(false)
   }, [loadPlaylist])
 
