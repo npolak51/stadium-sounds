@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Stadium Sounds PWA
 
 A Progressive Web App for stadium audio control—player walk-up music, sound effects, and in-game playlists. Built as a modern PWA replacement for the original StadiumSounds iOS app.
@@ -62,7 +61,3 @@ npm run preview  # Preview production build
 - Audio files are stored in a separate IndexedDB store
 - Use **Manage → Files → Export Config** to backup your configuration
 - **Import Config** restores players, assignments, and playlists (audio files must be re-imported if switching devices)
-=======
-# bullpen-tracking
-# stadium-sounds
->>>>>>> 548e0aa563a9e03d61988fa56b5b05e2f494415d
