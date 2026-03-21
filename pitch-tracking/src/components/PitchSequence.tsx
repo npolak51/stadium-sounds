@@ -6,11 +6,10 @@ interface Props {
 }
 
 export function PitchSequence({ pitches }: Props) {
-  if (pitches.length === 0) return null
-
-  const sequence = formatPitchSequence(pitches)
+  const sequence = pitches.length > 0 ? formatPitchSequence(pitches) : '—'
+  const isEmpty = pitches.length === 0
   return (
-    <div className="pitch-sequence">
+    <div className={`pitch-sequence ${isEmpty ? 'pitch-sequence--empty' : ''}`}>
       <span className="label">Sequence</span>
       <span className="value">{sequence}</span>
     </div>

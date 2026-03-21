@@ -388,18 +388,18 @@ export function GamePage() {
         <main className="game-main">
           {!currentAtBatId ? (
             <div className="new-at-bat">
-              {canUndo && (
-                <button
-                  type="button"
-                  className="undo-btn undo-btn-above"
-                  onClick={handleUndo}
-                  title="Undo last pitch"
-                >
-                  Undo last pitch
-                </button>
-              )}
+              <button
+                type="button"
+                className="undo-btn undo-btn-above"
+                onClick={handleUndo}
+                disabled={!canUndo}
+                title="Undo last pitch"
+              >
+                Undo last pitch
+              </button>
               <h2>New batter</h2>
               <p className="batter-up-hint">Batting {nextSlotOrder} up</p>
+              <PitchSequence pitches={[]} />
               <div className="batter-input">
                 <input
                   type="text"
@@ -497,16 +497,15 @@ export function GamePage() {
                           : undefined
                     }
                   />
-                  {canUndo && (
-                    <button
-                      type="button"
-                      className="undo-btn"
-                      onClick={handleUndo}
-                      title="Undo last pitch"
-                    >
-                      Undo
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="undo-btn"
+                    onClick={handleUndo}
+                    disabled={!canUndo}
+                    title="Undo last pitch"
+                  >
+                    Undo
+                  </button>
                 </div>
               )}
             </>

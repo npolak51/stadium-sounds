@@ -1001,6 +1001,12 @@ body {
 
 .pitch-sequence {
   margin-bottom: 1rem;
+  min-height: 2.5rem;
+}
+
+.pitch-sequence--empty .value {
+  color: var(--gray);
+  font-weight: 500;
 }
 
 .pitch-sequence .label {
@@ -1042,9 +1048,14 @@ body {
   flex-shrink: 0;
 }
 
-.undo-btn:hover {
+.undo-btn:hover:not(:disabled) {
   background: var(--gold);
   color: var(--green-dark);
+}
+
+.undo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .undo-btn-above {
