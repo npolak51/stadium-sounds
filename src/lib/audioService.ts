@@ -37,6 +37,7 @@ let progressInterval: ReturnType<typeof setInterval> | null = null
 let stopFadeInterval: ReturnType<typeof setInterval> | null = null
 let fadeInInterval: ReturnType<typeof setInterval> | null = null
 let fadeOutInterval: ReturnType<typeof setInterval> | null = null
+let globalVolume = 1
 
 export type PlaybackState = {
   isPlaying: boolean
@@ -63,7 +64,7 @@ function getState(): PlaybackState {
       remainingTime: 0,
       progress: 0,
       currentAssignment: null,
-      volume: 1,
+      volume: globalVolume,
       fullDuration: 0,
       fullPosition: 0
     }
@@ -138,7 +139,7 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   currentAssignment = assignment
 
   audio.currentTime = assignment.startTime
-  audio.volume = assignment.fadeIn ? 0 : 1
+  audio.volume = assignment.fadeIn ? 0 : globalVolume
 
   if (assignment.fadeIn) {
     const fadeSteps = 25
@@ -147,7 +148,7 @@ export async function play(assignment: AudioAssignment): Promise<void> {
     let step = 0
     fadeInInterval = setInterval(() => {
       step++
-      audio.volume = Math.min(1, step / fadeSteps)
+      audio.volume = Math.min(globalVolume, (step / fadeSteps) * globalVolume)
       if (step >= fadeSteps && fadeInInterval) {
         clearInterval(fadeInInterval)
         fadeInInterval = null
@@ -233,8 +234,10 @@ export function togglePlayPause() {
 }
 
 export function setVolume(level: number) {
-  if (!currentAudio) return
-  currentAudio.volume = Math.max(0, Math.min(1, level))
+  globalVolume = Math.max(0, Math.min(1, level))
+  if (currentAudio) {
+    currentAudio.volume = globalVolume
+  }
   notify()
 }
 
@@ -307,7 +310,7 @@ export async function previewPlay(
   }
 
   audio.currentTime = startTime
-  audio.volume = 1
+  audio.volume = globalVolume
 
   const handleEnd = () => {
     URL.revokeObjectURL(url)
