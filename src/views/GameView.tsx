@@ -27,6 +27,7 @@ import {
   preloadBlobs,
   togglePlayPause,
   seekTo,
+  setVolume,
   type PlaybackState
 } from '../lib/audioService'
 import type { Player, AudioAssignment, SavedPlaylist } from '../types'
@@ -83,6 +84,15 @@ function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function playbackTrackLabel(a: AudioAssignment | null | undefined): string {
+  if (!a) return ''
+  const name = a.fileName?.trim()
+  if (name) return name
+  const p = a.filePath
+  const i = p.lastIndexOf('/')
+  return i >= 0 ? p.slice(i + 1) : p
 }
 
 export default function GameView() {
@@ -193,6 +203,15 @@ export default function GameView() {
     return () => { unsub() }
   }, [])
 
+  useEffect(() => {
+    if (!playbackState?.currentAssignment) {
+      setCurrentPlayingPlayerId(null)
+      setCurrentPlayingPitcherEntranceId(null)
+      setCurrentPlayingSoundEffectId(null)
+      setCurrentPlayingPlaylistId(null)
+    }
+  }, [playbackState?.currentAssignment])
+
   const playablePaths = assignments
     .filter(
       a => a.purpose === 'Player Music' || a.purpose === 'Pitcher Entrance' || a.purpose === 'Sound Effect' || a.purpose === 'In-Game Playlist'
@@ -275,10 +294,6 @@ export default function GameView() {
 
   const handleStop = useCallback(() => {
     stop()
-    setCurrentPlayingPlayerId(null)
-    setCurrentPlayingPitcherEntranceId(null)
-    setCurrentPlayingSoundEffectId(null)
-    setCurrentPlayingPlaylistId(null)
   }, [])
 
   const handleLoadPlaylist = useCallback(async (p: SavedPlaylist) => {
@@ -301,6 +316,9 @@ export default function GameView() {
       {/* Playback controls - show when something is playing */}
       {(playbackState?.currentAssignment || playbackState?.isPlaying) && (
         <div className="playback-bar">
+          <div className="playback-track-name" title={playbackTrackLabel(playbackState?.currentAssignment ?? undefined)}>
+            {playbackTrackLabel(playbackState?.currentAssignment ?? undefined)}
+          </div>
           <div className="playback-progress-wrap">
             <input
               type="range"
@@ -310,6 +328,7 @@ export default function GameView() {
               value={playbackState?.progress ?? 0}
               onChange={e => seekTo(parseFloat(e.target.value))}
               className="playback-slider"
+              aria-label="Playback position"
             />
           </div>
           <div className="playback-info">
@@ -320,37 +339,52 @@ export default function GameView() {
               -{formatTime(playbackState?.remainingTime ?? 0)}
             </span>
           </div>
-          <div className="playback-controls">
-            {isPlaylistMode && (
-              <>
+          <div className="playback-bottom-row">
+            <label className="playback-volume">
+              <span className="playback-volume-label">Vol</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={playbackState?.volume ?? 1}
+                onChange={e => setVolume(parseFloat(e.target.value))}
+                className="playback-volume-slider"
+                aria-label="Volume"
+              />
+            </label>
+            <div className="playback-controls">
+              {isPlaylistMode && (
+                <>
+                  <button
+                    className="playback-btn"
+                    onClick={() => handlePlayPlaylistSong(Math.max(0, currentPlaylistIndex - 1))}
+                    disabled={playlistItems.length <= 1}
+                  >
+                    ⏮
+                  </button>
+                </>
+              )}
+              <button className="playback-btn play-pause" onClick={togglePlayPause}>
+                {playbackState?.isPlaying ? '⏸' : '▶'}
+              </button>
+              {isPlaylistMode && (
                 <button
                   className="playback-btn"
-                  onClick={() => handlePlayPlaylistSong(Math.max(0, currentPlaylistIndex - 1))}
+                  onClick={() =>
+                    handlePlayPlaylistSong(
+                      Math.min(playlistItems.length - 1, currentPlaylistIndex + 1)
+                    )
+                  }
                   disabled={playlistItems.length <= 1}
                 >
-                  ⏮
+                  ⏭
                 </button>
-              </>
-            )}
-            <button className="playback-btn play-pause" onClick={togglePlayPause}>
-              {playbackState?.isPlaying ? '⏸' : '▶'}
-            </button>
-            {isPlaylistMode && (
-              <button
-                className="playback-btn"
-                onClick={() =>
-                  handlePlayPlaylistSong(
-                    Math.min(playlistItems.length - 1, currentPlaylistIndex + 1)
-                  )
-                }
-                disabled={playlistItems.length <= 1}
-              >
-                ⏭
+              )}
+              <button type="button" className="playback-btn stop-btn" onClick={handleStop}>
+                STOP
               </button>
-            )}
-            <button className="playback-btn stop-btn" onClick={handleStop}>
-              STOP
-            </button>
+            </div>
           </div>
         </div>
       )}

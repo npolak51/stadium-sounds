@@ -44,6 +44,8 @@ export type PlaybackState = {
   remainingTime: number
   progress: number
   currentAssignment: AudioAssignment | null
+  /** 0–1, mirrors HTMLMediaElement.volume */
+  volume: number
   /** Full file duration in seconds (for preview scrubber) */
   fullDuration: number
   /** Current position in full file in seconds (for preview scrubber) */
@@ -61,6 +63,7 @@ function getState(): PlaybackState {
       remainingTime: 0,
       progress: 0,
       currentAssignment: null,
+      volume: 1,
       fullDuration: 0,
       fullPosition: 0
     }
@@ -76,6 +79,7 @@ function getState(): PlaybackState {
     remainingTime: remaining,
     progress: total > 0 ? Math.min(1, elapsed / total) : 0,
     currentAssignment,
+    volume: currentAudio.volume,
     fullDuration: Number.isFinite(dur) ? dur : 0,
     fullPosition: Number.isFinite(pos) ? pos : 0
   }
@@ -228,6 +232,12 @@ export function togglePlayPause() {
   }
 }
 
+export function setVolume(level: number) {
+  if (!currentAudio) return
+  currentAudio.volume = Math.max(0, Math.min(1, level))
+  notify()
+}
+
 export function stop(immediate = false) {
   if (!currentAudio) return
   if (immediate) {
@@ -236,8 +246,8 @@ export function stop(immediate = false) {
   }
   const audio = currentAudio
   const startVolume = audio.volume
-  const fadeDuration = 1000 // ms
-  const steps = 20
+  const fadeDuration = 1500 // ms — fade to silence, slider tracks audio.volume
+  const steps = 30
   const stepInterval = fadeDuration / steps
   const volumeStep = startVolume / steps
   let step = 0
@@ -245,6 +255,7 @@ export function stop(immediate = false) {
   stopFadeInterval = setInterval(() => {
     step++
     audio.volume = Math.max(0, startVolume - volumeStep * step)
+    notify()
     if (step >= steps) {
       if (stopFadeInterval) clearInterval(stopFadeInterval)
       stopFadeInterval = null
