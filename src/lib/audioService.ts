@@ -31,6 +31,9 @@ function getBlobForPlay(path: string): Blob | null {
   return blobCache.get(path) ?? null
 }
 
+let audioContext: AudioContext | null = null
+let currentMediaSource: MediaElementAudioSourceNode | null = null
+let currentGainNode: GainNode | null = null
 let currentAudio: HTMLAudioElement | null = null
 let currentAssignment: AudioAssignment | null = null
 let progressInterval: ReturnType<typeof setInterval> | null = null
@@ -39,13 +42,63 @@ let fadeInInterval: ReturnType<typeof setInterval> | null = null
 let fadeOutInterval: ReturnType<typeof setInterval> | null = null
 let globalVolume = 1
 
+function getOrCreateAudioContext(): AudioContext {
+  if (!audioContext) {
+    const AC =
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AC) {
+      throw new Error('Web Audio API is not available in this browser.')
+    }
+    audioContext = new AC()
+  }
+  return audioContext
+}
+
+async function ensureContextRunning(): Promise<void> {
+  const ctx = getOrCreateAudioContext()
+  if (ctx.state === 'suspended') {
+    await ctx.resume()
+  }
+}
+
+/** Route element through GainNode so volume works on iOS (HTMLMediaElement.volume is ineffective there). */
+function attachPlaybackGraph(audio: HTMLAudioElement, initialGain: number): void {
+  disconnectPlaybackGraph()
+  const ctx = getOrCreateAudioContext()
+  audio.volume = 1
+  currentMediaSource = ctx.createMediaElementSource(audio)
+  currentGainNode = ctx.createGain()
+  currentGainNode.gain.value = initialGain
+  currentMediaSource.connect(currentGainNode).connect(ctx.destination)
+}
+
+function disconnectPlaybackGraph(): void {
+  try {
+    currentMediaSource?.disconnect()
+  } catch {
+    /* ignore */
+  }
+  try {
+    currentGainNode?.disconnect()
+  } catch {
+    /* ignore */
+  }
+  currentMediaSource = null
+  currentGainNode = null
+}
+
+function currentOutputGain(): number {
+  return currentGainNode?.gain.value ?? globalVolume
+}
+
 export type PlaybackState = {
   isPlaying: boolean
   currentTime: number
   remainingTime: number
   progress: number
   currentAssignment: AudioAssignment | null
-  /** 0–1, mirrors HTMLMediaElement.volume */
+  /** 0–1, Web Audio gain (iOS-safe) */
   volume: number
   /** Full file duration in seconds (for preview scrubber) */
   fullDuration: number
@@ -80,7 +133,7 @@ function getState(): PlaybackState {
     remainingTime: remaining,
     progress: total > 0 ? Math.min(1, elapsed / total) : 0,
     currentAssignment,
-    volume: currentAudio.volume,
+    volume: currentOutputGain(),
     fullDuration: Number.isFinite(dur) ? dur : 0,
     fullPosition: Number.isFinite(pos) ? pos : 0
   }
@@ -116,6 +169,7 @@ function clearPlayback() {
   }
   if (currentAudio) {
     currentAudio.pause()
+    disconnectPlaybackGraph()
     currentAudio.src = ''
     currentAudio = null
   }
@@ -139,7 +193,7 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   currentAssignment = assignment
 
   audio.currentTime = assignment.startTime
-  audio.volume = assignment.fadeIn ? 0 : globalVolume
+  attachPlaybackGraph(audio, assignment.fadeIn ? 0 : globalVolume)
 
   if (assignment.fadeIn) {
     const fadeSteps = 25
@@ -148,7 +202,9 @@ export async function play(assignment: AudioAssignment): Promise<void> {
     let step = 0
     fadeInInterval = setInterval(() => {
       step++
-      audio.volume = Math.min(globalVolume, (step / fadeSteps) * globalVolume)
+      if (currentGainNode) {
+        currentGainNode.gain.value = Math.min(globalVolume, (step / fadeSteps) * globalVolume)
+      }
       if (step >= fadeSteps && fadeInInterval) {
         clearInterval(fadeInInterval)
         fadeInInterval = null
@@ -164,8 +220,8 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   audio.addEventListener('ended', handleEnd)
 
   const startFadeOut = () => {
-    if (fadeOutInterval || !assignment.fadeOut) return
-    const startVolume = audio.volume
+    if (fadeOutInterval || !assignment.fadeOut || !currentGainNode) return
+    const startVolume = currentGainNode.gain.value
     const fadeSteps = 25
     const fadeDuration = 1200
     const stepInterval = fadeDuration / fadeSteps
@@ -173,7 +229,9 @@ export async function play(assignment: AudioAssignment): Promise<void> {
     let step = 0
     fadeOutInterval = setInterval(() => {
       step++
-      audio.volume = Math.max(0, startVolume - volumeStep * step)
+      if (currentGainNode) {
+        currentGainNode.gain.value = Math.max(0, startVolume - volumeStep * step)
+      }
       if (step >= fadeSteps && fadeOutInterval) {
         clearInterval(fadeOutInterval)
         fadeOutInterval = null
@@ -194,6 +252,7 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   })
 
   try {
+    await ensureContextRunning()
     await audio.play()
   } catch (e) {
     clearPlayback()
@@ -217,11 +276,17 @@ export function pause() {
 }
 
 export function resume() {
-  if (currentAudio) {
-    currentAudio.play()
-    progressInterval = setInterval(notify, 100)
-    notify()
-  }
+  if (!currentAudio) return
+  void (async () => {
+    try {
+      await ensureContextRunning()
+      await currentAudio!.play()
+      progressInterval = setInterval(notify, 100)
+      notify()
+    } catch {
+      notify()
+    }
+  })()
 }
 
 export function togglePlayPause() {
@@ -235,8 +300,8 @@ export function togglePlayPause() {
 
 export function setVolume(level: number) {
   globalVolume = Math.max(0, Math.min(1, level))
-  if (currentAudio) {
-    currentAudio.volume = globalVolume
+  if (currentGainNode) {
+    currentGainNode.gain.value = globalVolume
   }
   notify()
 }
@@ -247,9 +312,8 @@ export function stop(immediate = false) {
     clearPlayback()
     return
   }
-  const audio = currentAudio
-  const startVolume = audio.volume
-  const fadeDuration = 1500 // ms — fade to silence, slider tracks audio.volume
+  const startVolume = currentOutputGain()
+  const fadeDuration = 1500 // ms — fade to silence, slider tracks gain
   const steps = 30
   const stepInterval = fadeDuration / steps
   const volumeStep = startVolume / steps
@@ -257,7 +321,9 @@ export function stop(immediate = false) {
   if (stopFadeInterval) clearInterval(stopFadeInterval)
   stopFadeInterval = setInterval(() => {
     step++
-    audio.volume = Math.max(0, startVolume - volumeStep * step)
+    if (currentGainNode) {
+      currentGainNode.gain.value = Math.max(0, startVolume - volumeStep * step)
+    }
     notify()
     if (step >= steps) {
       if (stopFadeInterval) clearInterval(stopFadeInterval)
@@ -310,7 +376,7 @@ export async function previewPlay(
   }
 
   audio.currentTime = startTime
-  audio.volume = globalVolume
+  attachPlaybackGraph(audio, globalVolume)
 
   const handleEnd = () => {
     URL.revokeObjectURL(url)
@@ -325,6 +391,7 @@ export async function previewPlay(
   })
 
   try {
+    await ensureContextRunning()
     await audio.play()
   } catch (e) {
     clearPlayback()
