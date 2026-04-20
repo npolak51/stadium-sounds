@@ -28,6 +28,7 @@ import {
   togglePlayPause,
   seekTo,
   setVolume,
+  resetSoundEffectSegmentResume,
   type PlaybackState
 } from '../lib/audioService'
 import type { Player, AudioAssignment, SavedPlaylist } from '../types'
@@ -127,6 +128,7 @@ export default function GameView() {
     .filter(a => a.purpose === 'Pitcher Entrance')
     .sort((a, b) => (a.playerOrder ?? 0) - (b.playerOrder ?? 0))
   const soundEffects = assignments.filter(a => a.purpose === 'Sound Effect')
+  const hasSegmentResumeSoundEffects = soundEffects.some(a => a.soundEffectSegmentResume)
   const playlistItems = [...assignments]
     .filter(a => a.purpose === 'In-Game Playlist')
     .sort((a, b) => (a.playlistOrder ?? 0) - (b.playlistOrder ?? 0))
@@ -462,7 +464,7 @@ export default function GameView() {
           </div>
         </section>
 
-        {/* Sound Effects + Pitcher Entrance - stacked to match Player Music height */}
+        {/* Sound Effects + Pitcher Entrance */}
         <div className="game-section-stack">
           <section className="game-section game-section-half">
             <h2 className="section-title">Sound Effects</h2>
@@ -477,6 +479,17 @@ export default function GameView() {
                 </button>
               ))}
             </div>
+            {hasSegmentResumeSoundEffects && (
+              <div className="segment-resume-reset-row">
+                <button
+                  type="button"
+                  className="btn-text"
+                  onClick={() => resetSoundEffectSegmentResume()}
+                >
+                  Reset segment progress (all sound effects with resume)
+                </button>
+              </div>
+            )}
             <div className="sound-effect-grid">
               {soundEffectsByCategory.map(a => {
                 const isActive = currentPlayingSoundEffectId === a.id

@@ -42,6 +42,66 @@ let fadeInInterval: ReturnType<typeof setInterval> | null = null
 let fadeOutInterval: ReturnType<typeof setInterval> | null = null
 let globalVolume = 1
 
+/** Next seek position (seconds in file) for sound effects with `soundEffectSegmentResume`. */
+const segmentResumeCursorById = new Map<string, number>()
+/** Set when segment playback is ending at endTime (including fade-out to end); snapshot uses startTime instead of currentTime. */
+let segmentResumeEndPendingForId: string | null = null
+
+function isSegmentResumeAssignment(a: AudioAssignment | null): boolean {
+  return (
+    a != null &&
+    a.purpose === 'Sound Effect' &&
+    a.soundEffectSegmentResume === true
+  )
+}
+
+function resolveSegmentResumeStartTime(a: AudioAssignment): number {
+  const raw = segmentResumeCursorById.get(a.id)
+  let t = raw !== undefined ? raw : a.startTime
+  t = Math.max(a.startTime, Math.min(t, a.endTime))
+  if (t >= a.endTime - 1e-3) {
+    return a.startTime
+  }
+  return t
+}
+
+/**
+ * Clear saved segment-resume positions. Pass an assignment id to reset one effect; omit to reset all.
+ * Call when starting a new game or similar.
+ */
+export function resetSoundEffectSegmentResume(assignmentId?: string): void {
+  if (assignmentId == null) {
+    segmentResumeCursorById.clear()
+  } else {
+    segmentResumeCursorById.delete(assignmentId)
+  }
+  segmentResumeEndPendingForId = null
+  notify()
+}
+
+function snapshotSegmentResumeBeforeClear(): void {
+  if (!isSegmentResumeAssignment(currentAssignment)) return
+  const assignment = currentAssignment!
+  const id = assignment.id
+
+  if (segmentResumeEndPendingForId === id) {
+    segmentResumeCursorById.set(id, assignment.startTime)
+    segmentResumeEndPendingForId = null
+    return
+  }
+
+  if (!currentAudio) return
+
+  const t = currentAudio.currentTime
+  const st = assignment.startTime
+  const en = assignment.endTime
+  if (t >= en - 1e-3) {
+    segmentResumeCursorById.set(id, st)
+  } else if (t > st) {
+    segmentResumeCursorById.set(id, t)
+  }
+}
+
 function getOrCreateAudioContext(): AudioContext {
   if (!audioContext) {
     const AC =
@@ -151,6 +211,7 @@ export function subscribe(fn: Listener) {
 }
 
 function clearPlayback() {
+  snapshotSegmentResumeBeforeClear()
   if (stopFadeInterval) {
     clearInterval(stopFadeInterval)
     stopFadeInterval = null
@@ -192,7 +253,9 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   currentAudio = audio
   currentAssignment = assignment
 
-  audio.currentTime = assignment.startTime
+  audio.currentTime = isSegmentResumeAssignment(assignment)
+    ? resolveSegmentResumeStartTime(assignment)
+    : assignment.startTime
   attachPlaybackGraph(audio, assignment.fadeIn ? 0 : globalVolume)
 
   if (assignment.fadeIn) {
@@ -244,8 +307,14 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   audio.addEventListener('timeupdate', () => {
     const timeUntilEnd = assignment.endTime - audio.currentTime
     if (assignment.fadeOut && timeUntilEnd <= 1.2 && !fadeOutInterval) {
+      if (isSegmentResumeAssignment(assignment)) {
+        segmentResumeEndPendingForId = assignment.id
+      }
       startFadeOut()
     } else if (!assignment.fadeOut && audio.currentTime >= assignment.endTime) {
+      if (isSegmentResumeAssignment(assignment)) {
+        segmentResumeEndPendingForId = assignment.id
+      }
       audio.pause()
       handleEnd()
     }
@@ -337,6 +406,9 @@ export function seekTo(progress: number) {
   if (!currentAudio || !currentAssignment) return
   const total = currentAssignment.endTime - currentAssignment.startTime
   currentAudio.currentTime = currentAssignment.startTime + progress * total
+  if (isSegmentResumeAssignment(currentAssignment)) {
+    segmentResumeCursorById.set(currentAssignment.id, currentAudio.currentTime)
+  }
   notify()
 }
 

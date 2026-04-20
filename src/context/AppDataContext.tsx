@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from 'react'
 import type { Player, AudioAssignment, SavedPlaylist, AppConfiguration, TeamType } from '../types'
 import * as db from '../lib/db'
-import { getAudioDuration } from '../lib/audioService'
+import { getAudioDuration, resetSoundEffectSegmentResume } from '../lib/audioService'
 
 interface AppDataContextValue {
   players: Player[]
@@ -133,6 +133,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const removeAssignment = useCallback((assignment: AudioAssignment) => {
+    resetSoundEffectSegmentResume(assignment.id)
     setAssignments(prev => prev.filter(a => a.id !== assignment.id))
   }, [])
 
@@ -290,12 +291,13 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       assignments,
       savedPlaylists,
       exportedAt: new Date().toISOString(),
-      version: '1.0'
+      version: '1.1'
     }
     return JSON.stringify(config, null, 2)
   }, [players, assignments, savedPlaylists])
 
   const importConfiguration = useCallback((json: string) => {
+    resetSoundEffectSegmentResume()
     const config: AppConfiguration = JSON.parse(json)
     const playersData = config.players.map(p => ({ ...p, id: p.id || generateId() }))
     const playerMap = new Map(playersData.map(pr => [pr.id, pr]))

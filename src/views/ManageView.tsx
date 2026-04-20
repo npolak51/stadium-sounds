@@ -1,7 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAppData } from '../context/AppDataContext'
 import { storeAudioFile, getStorageUsage, getAllStoredFiles, clearAllAudioFiles } from '../lib/audioStorage'
-import { previewPlay, getAudioDuration, subscribe, seekToFullPosition, preloadBlobs, clearBlobCache } from '../lib/audioService'
+import {
+  previewPlay,
+  getAudioDuration,
+  subscribe,
+  seekToFullPosition,
+  preloadBlobs,
+  clearBlobCache,
+  resetSoundEffectSegmentResume
+} from '../lib/audioService'
 import TimeInput from '../components/TimeInput'
 import ChooseAudioModal from '../components/ChooseAudioModal'
 import EditAssignmentModal from '../components/EditAssignmentModal'
@@ -328,6 +336,7 @@ function AudioTab({
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [fadeIn, setFadeIn] = useState(false)
   const [fadeOut, setFadeOut] = useState(false)
+  const [soundEffectSegmentResume, setSoundEffectSegmentResume] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [storedFiles, setStoredFiles] = useState<{ path: string; fileName: string }[]>([])
@@ -417,12 +426,15 @@ function AudioTab({
       player: undefined,
       soundEffectCategory: purpose === 'Sound Effect' ? soundCategory : undefined,
       soundEffectName: purpose === 'Sound Effect' ? soundEffectName.trim() || undefined : undefined,
+      soundEffectSegmentResume:
+        purpose === 'Sound Effect' && soundEffectSegmentResume ? true : undefined,
       playlistOrder: purpose === 'In-Game Playlist' ? 0 : undefined
     }
     addAssignment(assignment)
     if (purpose === 'In-Game Playlist') setPlaylistOrder(assignment)
     setSelectedFile(null)
     setSoundEffectName('')
+    setSoundEffectSegmentResume(false)
     setStartTime(0)
     setEndTime(DEFAULT_DURATION)
     setDuration(DEFAULT_DURATION)
@@ -456,6 +468,7 @@ function AudioTab({
 
   const handleClearAll = async () => {
     if (!confirm('Are you sure? This will permanently delete all audio files and remove all assignments (Sound Effects, Playlist, Player Music, and Pitcher Entrance).')) return
+    resetSoundEffectSegmentResume()
     for (const a of assignments) {
       removeAssignment(a)
     }
@@ -531,6 +544,18 @@ function AudioTab({
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
+            <label
+              style={{ flexBasis: '100%', alignItems: 'flex-start' }}
+            >
+              <input
+                type="checkbox"
+                checked={soundEffectSegmentResume}
+                onChange={e => setSoundEffectSegmentResume(e.target.checked)}
+              />
+              <span>
+                Resume from last stop (segment plays forward until End time, then restarts at Start)
+              </span>
+            </label>
           </>
         )}
         {selectedFile && fileDuration != null && fileDuration > 0 && (

@@ -23,6 +23,9 @@ export default function EditAssignmentModal({ assignment, onSave, onClose }: Edi
   const [soundCategory, setSoundCategory] = useState<SoundEffectCategory>(
     assignment.soundEffectCategory ?? 'Pre/Postgame'
   )
+  const [soundEffectSegmentResume, setSoundEffectSegmentResume] = useState(
+    assignment.soundEffectSegmentResume ?? false
+  )
   const [fileDuration, setFileDuration] = useState<number | null>(null)
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [playbackPosition, setPlaybackPosition] = useState<number | null>(null)
@@ -57,7 +60,13 @@ export default function EditAssignmentModal({ assignment, onSave, onClose }: Edi
       fadeOut,
       soundEffectCategory: assignment.purpose === 'Sound Effect' ? soundCategory : assignment.soundEffectCategory,
       soundEffectName:
-        assignment.purpose === 'Sound Effect' ? (soundEffectName.trim() || undefined) : assignment.soundEffectName
+        assignment.purpose === 'Sound Effect' ? (soundEffectName.trim() || undefined) : assignment.soundEffectName,
+      soundEffectSegmentResume:
+        assignment.purpose === 'Sound Effect'
+          ? soundEffectSegmentResume
+            ? true
+            : undefined
+          : assignment.soundEffectSegmentResume
     }
     onSave(updated)
     onClose()
@@ -97,6 +106,14 @@ export default function EditAssignmentModal({ assignment, onSave, onClose }: Edi
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="edit-modal-checkbox">
+              <input
+                type="checkbox"
+                checked={soundEffectSegmentResume}
+                onChange={e => setSoundEffectSegmentResume(e.target.checked)}
+              />
+              Resume from last stop (plays forward until End time, then restarts at Start)
             </label>
           </>
         )}

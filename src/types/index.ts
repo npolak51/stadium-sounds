@@ -29,6 +29,8 @@ export interface AudioAssignment {
   fadeOut: boolean
   soundEffectCategory?: SoundEffectCategory
   soundEffectName?: string  // Custom display name for sound effects
+  /** When true, each play resumes from the last stop position within start/end; after reaching end, next play restarts at start. */
+  soundEffectSegmentResume?: boolean
   playlistOrder?: number
 }
 
