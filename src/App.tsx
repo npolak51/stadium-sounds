@@ -5,7 +5,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import GameView from './views/GameView'
 import PlaylistsView from './views/PlaylistsView'
 import ManageView from './views/ManageView'
-import { preloadBlobs } from './lib/audioService'
+import { preloadBlobs, warmupAudioContext } from './lib/audioService'
 import './App.css'
 
 type Tab = 'game' | 'playlists' | 'manage'
@@ -21,6 +21,19 @@ function PreloadAudio() {
 
 function App() {
   const [tab, setTab] = useState<Tab>('game')
+
+  /** Prime AudioContext on first gesture (reduces latency on first playback after cold open). */
+  useEffect(() => {
+    let done = false
+    const onFirstPointer = () => {
+      if (done) return
+      done = true
+      window.removeEventListener('pointerdown', onFirstPointer, true)
+      void warmupAudioContext()
+    }
+    window.addEventListener('pointerdown', onFirstPointer, { capture: true })
+    return () => window.removeEventListener('pointerdown', onFirstPointer, true)
+  }, [])
 
   return (
     <PwaUpdateProvider>
