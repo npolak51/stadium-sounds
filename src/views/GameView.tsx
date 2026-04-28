@@ -25,7 +25,6 @@ import {
   play,
   stop,
   preloadBlobs,
-  preloadDecodedBuffers,
   togglePlayPause,
   seekTo,
   setVolume,
@@ -230,9 +229,7 @@ export default function GameView() {
       return
     }
     setPreloadReady(false)
-    preloadBlobs(playablePaths)
-      .then(() => preloadDecodedBuffers(playablePaths))
-      .then(() => setPreloadReady(true))
+    preloadBlobs(playablePaths).then(() => setPreloadReady(true))
   }, [assignments])
 
   const [playError, setPlayError] = useState<string | null>(null)

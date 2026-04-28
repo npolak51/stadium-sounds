@@ -1,39 +1,16 @@
 import type { AudioAssignment } from '../types'
 import { getAudioBlob } from './audioStorage'
 
-const PROGRESS_MS = 100
-const SEGMENT_FADE_OUT_S = 1.2
-const FADE_IN_TOTAL_S = 1.2
-/** User Stop: fade duration (gain automation + wall-clock cleanup aligned to this). */
-export const STOP_FADE_MS = 1500
-const STOP_FADE_SECS = STOP_FADE_MS / 1000
-
-const audioDebug = import.meta.env.DEV
-
-function logPlaybackTiming(label: string, timings: Record<string, number>) {
-  if (!audioDebug) return
-  const parts = Object.entries(timings)
-    .filter(([, v]) => typeof v === 'number' && v >= 0)
-    .map(([k, v]) => `${k}: ${v.toFixed(1)}ms`)
-  console.info(`[audio] ${label}`, Object.fromEntries(Object.entries(timings)), parts.join(' '))
-}
-
 /** In-memory cache for pre-loaded blobs. Avoids async load on play(), which breaks iOS user-gesture requirement. */
 const blobCache = new Map<string, Blob>()
-
-/** Decoded PCM for buffer playback (deterministic scheduling vs HTMLMediaElement). */
-const bufferCache = new Map<string, AudioBuffer>()
-/** In-flight decodes keyed by path. */
-const decodePromises = new Map<string, Promise<AudioBuffer>>()
 
 /** Clear the blob cache (e.g. when user clears all audio files). */
 export function clearBlobCache(): void {
   blobCache.clear()
-  bufferCache.clear()
-  decodePromises.clear()
 }
 
-/** Pre-load blobs for given paths. Call when Game view mounts so play() can avoid cold IndexedDB on tap. */
+/** Pre-load blobs for given paths. Call when Game view mounts so play() can use cache synchronously on tap.
+ * Returns true when all paths are cached (required for iPad - play() must run sync within user gesture). */
 export async function preloadBlobs(paths: string[]): Promise<void> {
   const unique = [...new Set(paths)].filter(Boolean)
   await Promise.all(
@@ -41,23 +18,6 @@ export async function preloadBlobs(paths: string[]): Promise<void> {
       if (blobCache.has(path)) return
       const blob = await getAudioBlob(path)
       if (blob) blobCache.set(path, blob)
-    })
-  )
-}
-
-/**
- * Decode audio into AudioBuffers ahead of play for lower tap-to-sound latency and stable timing.
- * Safe after blobs exist; failures per file are swallowed so play can still retry.
- */
-export async function preloadDecodedBuffers(paths: string[]): Promise<void> {
-  const unique = [...new Set(paths)].filter(Boolean)
-  await Promise.all(
-    unique.map(async (path) => {
-      try {
-        await getDecodedBuffer(path)
-      } catch {
-        /* ignore — play() surfaces errors */
-      }
     })
   )
 }
@@ -72,31 +32,20 @@ function getBlobForPlay(path: string): Blob | null {
 }
 
 let audioContext: AudioContext | null = null
-
-let currentSource: AudioBufferSourceNode | null = null
+let currentMediaSource: MediaElementAudioSourceNode | null = null
 let currentGainNode: GainNode | null = null
-let currentBuffer: AudioBuffer | null = null
+let currentAudio: HTMLAudioElement | null = null
 let currentAssignment: AudioAssignment | null = null
-let playbackActive = false
-/** Absolute file seconds when the current BufferSource began (playback head at play start). */
-let fileTimeAtPlayStart = 0
-/** AudioContext.currentTime when the current BufferSource's `when` fires. */
-let playStartedAtCtxTime = 0
-/** Saved position after user Pause (seconds in file). */
-let pausedAtFileSeconds: number | null = null
-
 let progressInterval: ReturnType<typeof setInterval> | null = null
-let stopFadeCleanupTimer: ReturnType<typeof window.setTimeout> | null = null
-let segmentFadeScheduled = false
-let segmentFadeWatchInterval: ReturnType<typeof setInterval> | null = null
-
+let stopFadeInterval: ReturnType<typeof setInterval> | null = null
+let fadeInInterval: ReturnType<typeof setInterval> | null = null
+let fadeOutInterval: ReturnType<typeof setInterval> | null = null
 let globalVolume = 1
 
 /** Next seek position (seconds in file) for sound effects with `soundEffectSegmentResume`. */
 const segmentResumeCursorById = new Map<string, number>()
+/** Set when segment playback is ending at endTime (including fade-out to end); snapshot uses startTime instead of currentTime. */
 let segmentResumeEndPendingForId: string | null = null
-
-let warmupDone = false
 
 function isSegmentResumeAssignment(a: AudioAssignment | null): boolean {
   return (
@@ -116,6 +65,10 @@ function resolveSegmentResumeStartTime(a: AudioAssignment): number {
   return t
 }
 
+/**
+ * Clear saved segment-resume positions. Pass an assignment id to reset one effect; omit to reset all.
+ * Call when starting a new game or similar.
+ */
 export function resetSoundEffectSegmentResume(assignmentId?: string): void {
   if (assignmentId == null) {
     segmentResumeCursorById.clear()
@@ -137,7 +90,9 @@ function snapshotSegmentResumeBeforeClear(): void {
     return
   }
 
-  const t = pausedAtFileSeconds ?? getCurrentFileTimeInner()
+  if (!currentAudio) return
+
+  const t = currentAudio.currentTime
   const st = assignment.startTime
   const en = assignment.endTime
   if (t >= en - 1e-3) {
@@ -160,69 +115,27 @@ function getOrCreateAudioContext(): AudioContext {
   return audioContext
 }
 
-export async function ensureContextRunning(): Promise<void> {
+async function ensureContextRunning(): Promise<void> {
   const ctx = getOrCreateAudioContext()
   if (ctx.state === 'suspended') {
     await ctx.resume()
   }
 }
 
-/**
- * Runs AudioContext.resume() once on first gesture (pair with passive pointer listener).
- * Helps reduce first-play latency after home-screen launch.
- */
-export async function warmupAudioContext(): Promise<void> {
-  if (warmupDone) return
-  warmupDone = true
-  await ensureContextRunning()
+/** Route element through GainNode so volume works on iOS (HTMLMediaElement.volume is ineffective there). */
+function attachPlaybackGraph(audio: HTMLAudioElement, initialGain: number): void {
+  disconnectPlaybackGraph()
   const ctx = getOrCreateAudioContext()
-  /* Inaudible one-sample tick so the rendering graph is exercised once. */
-  const buf = ctx.createBuffer(1, 1, ctx.sampleRate)
-  const src = ctx.createBufferSource()
-  const g = ctx.createGain()
-  g.gain.value = 0
-  src.buffer = buf
-  src.connect(g).connect(ctx.destination)
-  const t = ctx.currentTime
-  src.start(t)
-  src.stop(t + 0.001)
-}
-
-async function getDecodedBuffer(filePath: string): Promise<AudioBuffer> {
-  const hit = bufferCache.get(filePath)
-  if (hit) return hit
-  let p = decodePromises.get(filePath)
-  if (!p) {
-    p = (async () => {
-      let blob = getBlobForPlay(filePath)
-      if (!blob) {
-        blob = await getAudioBlob(filePath)
-        if (blob) blobCache.set(filePath, blob)
-      }
-      if (!blob) {
-        decodePromises.delete(filePath)
-        throw new Error(`Audio file not found: ${filePath}`)
-      }
-      const ctx = getOrCreateAudioContext()
-      const raw = await blob.arrayBuffer()
-      const audioBuf = await ctx.decodeAudioData(raw.slice(0))
-      bufferCache.set(filePath, audioBuf)
-      decodePromises.delete(filePath)
-      return audioBuf
-    })()
-    decodePromises.set(filePath, p)
-  }
-  return p
+  audio.volume = 1
+  currentMediaSource = ctx.createMediaElementSource(audio)
+  currentGainNode = ctx.createGain()
+  currentGainNode.gain.value = initialGain
+  currentMediaSource.connect(currentGainNode).connect(ctx.destination)
 }
 
 function disconnectPlaybackGraph(): void {
   try {
-    currentSource?.stop(0)
-  } catch {
-    /* already stopped */
-  }
-  try {
-    currentSource?.disconnect()
+    currentMediaSource?.disconnect()
   } catch {
     /* ignore */
   }
@@ -231,36 +144,12 @@ function disconnectPlaybackGraph(): void {
   } catch {
     /* ignore */
   }
-  currentSource = null
+  currentMediaSource = null
   currentGainNode = null
-  currentBuffer = null
-  playbackActive = false
 }
 
 function currentOutputGain(): number {
-  if (currentGainNode) {
-    try {
-      return currentGainNode.gain.value
-    } catch {
-      return globalVolume
-    }
-  }
-  return globalVolume
-}
-
-/** Current playback head in the file (seconds), including during active BufferSource playback. */
-function getCurrentFileTimeInner(): number {
-  const ctx = audioContext
-  if (!ctx || !currentBuffer || !currentAssignment) {
-    return pausedAtFileSeconds ?? 0
-  }
-  if (playbackActive) {
-    return fileTimeAtPlayStart + (ctx.currentTime - playStartedAtCtxTime)
-  }
-  if (pausedAtFileSeconds !== null) {
-    return pausedAtFileSeconds
-  }
-  return currentAssignment.startTime
+  return currentGainNode?.gain.value ?? globalVolume
 }
 
 export type PlaybackState = {
@@ -271,7 +160,9 @@ export type PlaybackState = {
   currentAssignment: AudioAssignment | null
   /** 0–1, Web Audio gain (iOS-safe) */
   volume: number
+  /** Full file duration in seconds (for preview scrubber) */
   fullDuration: number
+  /** Current position in full file in seconds (for preview scrubber) */
   fullPosition: number
 }
 
@@ -279,7 +170,7 @@ type Listener = (state: PlaybackState) => void
 const listeners = new Set<Listener>()
 
 function getState(): PlaybackState {
-  if (!currentAssignment) {
+  if (!currentAudio || !currentAssignment) {
     return {
       isPlaying: false,
       currentTime: 0,
@@ -291,13 +182,13 @@ function getState(): PlaybackState {
       fullPosition: 0
     }
   }
-  const pos = getCurrentFileTimeInner()
-  const elapsed = Math.max(0, pos - currentAssignment.startTime)
+  const elapsed = Math.max(0, currentAudio.currentTime - currentAssignment.startTime)
   const total = currentAssignment.endTime - currentAssignment.startTime
   const remaining = Math.max(0, total - elapsed)
-  const dur = currentBuffer ? currentBuffer.duration : 0
+  const dur = currentAudio.duration
+  const pos = currentAudio.currentTime
   return {
-    isPlaying: playbackActive,
+    isPlaying: !currentAudio.paused,
     currentTime: elapsed,
     remainingTime: remaining,
     progress: total > 0 ? Math.min(1, elapsed / total) : 0,
@@ -319,157 +210,36 @@ export function subscribe(fn: Listener) {
   return () => listeners.delete(fn)
 }
 
-function cancelStopFadeTimer(): void {
-  if (stopFadeCleanupTimer != null) {
-    clearTimeout(stopFadeCleanupTimer)
-    stopFadeCleanupTimer = null
-  }
-}
-
-function stopSegmentFadeWatch(): void {
-  if (segmentFadeWatchInterval != null) {
-    clearInterval(segmentFadeWatchInterval)
-    segmentFadeWatchInterval = null
-  }
-}
-
 function clearPlayback() {
   snapshotSegmentResumeBeforeClear()
-  cancelStopFadeTimer()
-  stopSegmentFadeWatch()
-  segmentFadeScheduled = false
+  if (stopFadeInterval) {
+    clearInterval(stopFadeInterval)
+    stopFadeInterval = null
+  }
+  if (fadeInInterval) {
+    clearInterval(fadeInInterval)
+    fadeInInterval = null
+  }
+  if (fadeOutInterval) {
+    clearInterval(fadeOutInterval)
+    fadeOutInterval = null
+  }
   if (progressInterval) {
     clearInterval(progressInterval)
     progressInterval = null
   }
-  disconnectPlaybackGraph()
-  pausedAtFileSeconds = null
+  if (currentAudio) {
+    currentAudio.pause()
+    disconnectPlaybackGraph()
+    currentAudio.src = ''
+    currentAudio = null
+  }
   currentAssignment = null
   notify()
 }
 
-function stopCurrentSourceOnly(): void {
-  try {
-    currentSource?.stop(0)
-  } catch {
-    /* ignore */
-  }
-  try {
-    currentSource?.disconnect()
-  } catch {
-    /* ignore */
-  }
-  try {
-    currentGainNode?.disconnect()
-  } catch {
-    /* ignore */
-  }
-  currentSource = null
-  currentGainNode = null
-  playbackActive = false
-}
-
-/**
- * Start or resume buffer playback from `filePos` (seconds, within file).
- * `buffer` must be the decoded asset for `assignment.filePath`.
- */
-function startBufferFromFilePosition(
-  assignment: AudioAssignment,
-  buffer: AudioBuffer,
-  filePos: number,
-  opts: { scheduleFadeIn: boolean }
-): void {
-  const ctx = getOrCreateAudioContext()
-  stopCurrentSourceOnly()
-  segmentFadeScheduled = false
-
-  const st = assignment.startTime
-  const en = assignment.endTime
-  const startOffset = Math.max(st, Math.min(filePos, en))
-  const playDuration = Math.max(0, en - startOffset)
-  if (playDuration < 0.02) {
-    clearPlayback()
-    return
-  }
-
-  const source = ctx.createBufferSource()
-  source.buffer = buffer
-  const gain = ctx.createGain()
-  currentGainNode = gain
-  currentSource = source
-  currentBuffer = buffer
-
-  const when = ctx.currentTime + 0.005
-  const initialGain = opts.scheduleFadeIn && assignment.fadeIn ? 0 : globalVolume
-  gain.gain.value = initialGain
-  source.connect(gain).connect(ctx.destination)
-
-  source.start(when, startOffset, playDuration)
-
-  playStartedAtCtxTime = when
-  fileTimeAtPlayStart = startOffset
-
-  if (opts.scheduleFadeIn && assignment.fadeIn) {
-    gain.gain.cancelScheduledValues(when)
-    gain.gain.setValueAtTime(0, when)
-    gain.gain.linearRampToValueAtTime(globalVolume, when + FADE_IN_TOTAL_S)
-  }
-
-  playbackActive = true
-  pausedAtFileSeconds = null
-
-  source.onended = () => {
-    if (currentSource === source) {
-      clearPlayback()
-    }
-  }
-}
-
-/** Near assignment.endTime, fade gain to 0 over ~1.2s (respects volume changes earlier in playback). */
-function startSegmentFadeWatch(assignment: AudioAssignment): void {
-  stopSegmentFadeWatch()
-  if (!assignment.fadeOut) return
-  segmentFadeScheduled = false
-  segmentFadeWatchInterval = window.setInterval(() => {
-    if (!playbackActive || currentAssignment?.id !== assignment.id) {
-      stopSegmentFadeWatch()
-      return
-    }
-    const ft = getCurrentFileTimeInner()
-    const timeUntilEnd = assignment.endTime - ft
-    if (
-      !segmentFadeScheduled &&
-      timeUntilEnd <= SEGMENT_FADE_OUT_S + 0.06 &&
-      timeUntilEnd > 0
-    ) {
-      segmentFadeScheduled = true
-      if (isSegmentResumeAssignment(assignment)) {
-        segmentResumeEndPendingForId = assignment.id
-      }
-      const ctx = getOrCreateAudioContext()
-      const g = currentGainNode?.gain
-      if (g) {
-        const now = ctx.currentTime
-        const cur = g.value
-        g.cancelScheduledValues(now)
-        g.setValueAtTime(cur, now)
-        g.linearRampToValueAtTime(0, now + Math.min(timeUntilEnd, SEGMENT_FADE_OUT_S))
-      }
-    }
-    if (timeUntilEnd <= -0.1) {
-      stopSegmentFadeWatch()
-    }
-  }, 80)
-}
-
 export async function play(assignment: AudioAssignment): Promise<void> {
-  const tPlay = performance.now()
   stop(true)
-  const tAfterStop = performance.now()
-
-  await ensureContextRunning()
-  const tCtx = performance.now()
-
   let blob = getBlobForPlay(assignment.filePath)
   if (!blob) {
     blob = await getAudioBlob(assignment.filePath) ?? null
@@ -478,56 +248,109 @@ export async function play(assignment: AudioAssignment): Promise<void> {
   if (!blob) {
     throw new Error(`Audio file not found: ${assignment.fileName}`)
   }
-
-  const tBeforeDecode = performance.now()
-  const buffer = await getDecodedBuffer(assignment.filePath)
-  const tAfterDecode = performance.now()
-
+  const url = URL.createObjectURL(blob)
+  const audio = new Audio(url)
+  currentAudio = audio
   currentAssignment = assignment
 
-  const filePos = isSegmentResumeAssignment(assignment)
+  audio.currentTime = isSegmentResumeAssignment(assignment)
     ? resolveSegmentResumeStartTime(assignment)
     : assignment.startTime
+  attachPlaybackGraph(audio, assignment.fadeIn ? 0 : globalVolume)
 
-  startBufferFromFilePosition(assignment, buffer, filePos, { scheduleFadeIn: true })
-  startSegmentFadeWatch(assignment)
+  if (assignment.fadeIn) {
+    const fadeSteps = 25
+    const fadeDuration = 1200
+    const stepInterval = fadeDuration / fadeSteps
+    let step = 0
+    fadeInInterval = setInterval(() => {
+      step++
+      if (currentGainNode) {
+        currentGainNode.gain.value = Math.min(globalVolume, (step / fadeSteps) * globalVolume)
+      }
+      if (step >= fadeSteps && fadeInInterval) {
+        clearInterval(fadeInInterval)
+        fadeInInterval = null
+      }
+    }, stepInterval)
+  }
 
-  logPlaybackTiming('play', {
-    stopMs: tAfterStop - tPlay,
-    resumeContextMs: tCtx - tAfterStop,
-    decodeMs: tAfterDecode - tBeforeDecode,
-    totalMs: tAfterDecode - tPlay
+  const handleEnd = () => {
+    URL.revokeObjectURL(url)
+    clearPlayback()
+  }
+
+  audio.addEventListener('ended', handleEnd)
+
+  const startFadeOut = () => {
+    if (fadeOutInterval || !assignment.fadeOut || !currentGainNode) return
+    const startVolume = currentGainNode.gain.value
+    const fadeSteps = 25
+    const fadeDuration = 1200
+    const stepInterval = fadeDuration / fadeSteps
+    const volumeStep = startVolume / fadeSteps
+    let step = 0
+    fadeOutInterval = setInterval(() => {
+      step++
+      if (currentGainNode) {
+        currentGainNode.gain.value = Math.max(0, startVolume - volumeStep * step)
+      }
+      if (step >= fadeSteps && fadeOutInterval) {
+        clearInterval(fadeOutInterval)
+        fadeOutInterval = null
+        audio.pause()
+        handleEnd()
+      }
+    }, stepInterval)
+  }
+
+  audio.addEventListener('timeupdate', () => {
+    const timeUntilEnd = assignment.endTime - audio.currentTime
+    if (assignment.fadeOut && timeUntilEnd <= 1.2 && !fadeOutInterval) {
+      if (isSegmentResumeAssignment(assignment)) {
+        segmentResumeEndPendingForId = assignment.id
+      }
+      startFadeOut()
+    } else if (!assignment.fadeOut && audio.currentTime >= assignment.endTime) {
+      if (isSegmentResumeAssignment(assignment)) {
+        segmentResumeEndPendingForId = assignment.id
+      }
+      audio.pause()
+      handleEnd()
+    }
   })
 
-  progressInterval = setInterval(notify, PROGRESS_MS)
+  try {
+    await ensureContextRunning()
+    await audio.play()
+  } catch (e) {
+    clearPlayback()
+    throw new Error(
+      'Playback was blocked. On iPad/iPhone, tap the item again to play, or ensure audio is unlocked.'
+    )
+  }
+  progressInterval = setInterval(notify, 100)
   notify()
 }
 
 export function pause() {
-  if (!playbackActive || !currentAssignment || !currentBuffer) return
-  stopSegmentFadeWatch()
-  const pos = getCurrentFileTimeInner()
-  stopCurrentSourceOnly()
-  pausedAtFileSeconds = pos
-  if (progressInterval) {
-    clearInterval(progressInterval)
-    progressInterval = null
+  if (currentAudio) {
+    currentAudio.pause()
+    if (progressInterval) {
+      clearInterval(progressInterval)
+      progressInterval = null
+    }
+    notify()
   }
-  notify()
 }
 
 export function resume() {
-  if (!currentAssignment || !currentBuffer || pausedAtFileSeconds === null) return
+  if (!currentAudio) return
   void (async () => {
     try {
-      const t0 = performance.now()
       await ensureContextRunning()
-      startBufferFromFilePosition(currentAssignment!, currentBuffer!, pausedAtFileSeconds, {
-        scheduleFadeIn: false
-      })
-      startSegmentFadeWatch(currentAssignment!)
-      logPlaybackTiming('resume', { totalMs: performance.now() - t0 })
-      progressInterval = setInterval(notify, PROGRESS_MS)
+      await currentAudio!.play()
+      progressInterval = setInterval(notify, 100)
       notify()
     } catch {
       notify()
@@ -536,85 +359,63 @@ export function resume() {
 }
 
 export function togglePlayPause() {
-  if (!currentAssignment) return
-  if (playbackActive) {
-    pause()
-  } else {
+  if (!currentAudio) return
+  if (currentAudio.paused) {
     resume()
+  } else {
+    pause()
   }
 }
 
 export function setVolume(level: number) {
   globalVolume = Math.max(0, Math.min(1, level))
-  if (currentGainNode && playbackActive) {
-    currentGainNode.gain.setValueAtTime(globalVolume, getOrCreateAudioContext().currentTime)
-  } else if (currentGainNode) {
+  if (currentGainNode) {
     currentGainNode.gain.value = globalVolume
   }
   notify()
 }
 
 export function stop(immediate = false) {
-  if (!currentAssignment && !currentBuffer) return
+  if (!currentAudio) return
   if (immediate) {
     clearPlayback()
     return
   }
-  /** Paused: nothing routed to GainNode — stop clears UI state. */
-  if (!playbackActive || !currentGainNode) {
-    clearPlayback()
-    return
-  }
-  stopSegmentFadeWatch()
-  const ctx = getOrCreateAudioContext()
-  const g = currentGainNode.gain
-  const now = ctx.currentTime
-  const cur = g.value
-  cancelStopFadeTimer()
-  g.cancelScheduledValues(now)
-  g.setValueAtTime(cur, now)
-  const t0 = performance.now()
-  g.linearRampToValueAtTime(0, now + STOP_FADE_SECS)
-  logPlaybackTiming('stopFadeStart', {
-    rampDurationMs: STOP_FADE_MS
-  })
-
-  stopFadeCleanupTimer = window.setTimeout(() => {
-    stopFadeCleanupTimer = null
-    const t1 = performance.now()
-    logPlaybackTiming('stopFadeCleanup', {
-      elapsedWallMs: t1 - t0
-    })
-    clearPlayback()
-  }, STOP_FADE_MS)
+  const startVolume = currentOutputGain()
+  const fadeDuration = 1500 // ms — fade to silence, slider tracks gain
+  const steps = 30
+  const stepInterval = fadeDuration / steps
+  const volumeStep = startVolume / steps
+  let step = 0
+  if (stopFadeInterval) clearInterval(stopFadeInterval)
+  stopFadeInterval = setInterval(() => {
+    step++
+    if (currentGainNode) {
+      currentGainNode.gain.value = Math.max(0, startVolume - volumeStep * step)
+    }
+    notify()
+    if (step >= steps) {
+      if (stopFadeInterval) clearInterval(stopFadeInterval)
+      stopFadeInterval = null
+      clearPlayback()
+    }
+  }, stepInterval)
 }
 
 export function seekTo(progress: number) {
-  if (!currentAssignment || !currentBuffer) return
+  if (!currentAudio || !currentAssignment) return
   const total = currentAssignment.endTime - currentAssignment.startTime
-  const newPos = currentAssignment.startTime + progress * total
-  if (playbackActive && currentGainNode) {
-    startBufferFromFilePosition(currentAssignment, currentBuffer, newPos, { scheduleFadeIn: false })
-    startSegmentFadeWatch(currentAssignment)
-  } else if (pausedAtFileSeconds !== null) {
-    pausedAtFileSeconds = newPos
-  }
+  currentAudio.currentTime = currentAssignment.startTime + progress * total
   if (isSegmentResumeAssignment(currentAssignment)) {
-    segmentResumeCursorById.set(currentAssignment.id, newPos)
+    segmentResumeCursorById.set(currentAssignment.id, currentAudio.currentTime)
   }
   notify()
 }
 
+/** Seek to absolute position in the full file (seconds). Used for preview scrubber. */
 export function seekToFullPosition(seconds: number) {
-  if (!currentAssignment || !currentBuffer) return
-  const max = currentBuffer.duration
-  const t = Math.max(0, Math.min(seconds, max))
-  if (playbackActive && currentGainNode) {
-    startBufferFromFilePosition(currentAssignment, currentBuffer, t, { scheduleFadeIn: false })
-    startSegmentFadeWatch(currentAssignment)
-  } else if (pausedAtFileSeconds !== null) {
-    pausedAtFileSeconds = t
-  }
+  if (!currentAudio) return
+  currentAudio.currentTime = Math.max(0, Math.min(seconds, currentAudio.duration || seconds))
   notify()
 }
 
@@ -624,7 +425,6 @@ export async function previewPlay(
   startTime: number,
   endTime: number
 ): Promise<void> {
-  const t0 = performance.now()
   stop(true)
   let blob = getBlobForPlay(filePath)
   if (!blob) {
@@ -632,12 +432,9 @@ export async function previewPlay(
     if (blob) blobCache.set(filePath, blob)
   }
   if (!blob) throw new Error('Audio file not found')
-
-  await ensureContextRunning()
-  const tBeforeDecode = performance.now()
-  const buffer = await getDecodedBuffer(filePath)
-  const tAfterDecode = performance.now()
-
+  const url = URL.createObjectURL(blob)
+  const audio = new Audio(url)
+  currentAudio = audio
   currentAssignment = {
     id: '',
     fileName: '',
@@ -650,42 +447,48 @@ export async function previewPlay(
     fadeOut: false
   }
 
-  startBufferFromFilePosition(
-    currentAssignment,
-    buffer,
-    startTime,
-    { scheduleFadeIn: false }
-  )
+  audio.currentTime = startTime
+  attachPlaybackGraph(audio, globalVolume)
 
-  logPlaybackTiming('previewPlay', {
-    decodeMs: tAfterDecode - tBeforeDecode,
-    totalMs: tAfterDecode - t0
+  const handleEnd = () => {
+    URL.revokeObjectURL(url)
+    clearPlayback()
+  }
+
+  audio.addEventListener('timeupdate', () => {
+    if (audio.currentTime >= endTime) {
+      audio.pause()
+      handleEnd()
+    }
   })
 
-  progressInterval = setInterval(notify, PROGRESS_MS)
+  try {
+    await ensureContextRunning()
+    await audio.play()
+  } catch (e) {
+    clearPlayback()
+    throw new Error(
+      'Preview was blocked. On iPad/iPhone, tap Preview again to play.'
+    )
+  }
+  progressInterval = setInterval(notify, 100)
   notify()
 }
 
+/** Get duration of an audio file in seconds */
 export async function getAudioDuration(filePath: string): Promise<number> {
-  const cached = bufferCache.get(filePath)
-  if (cached) return cached.duration
   const blob = await getAudioBlob(filePath)
   if (!blob) return 0
-  try {
-    const buf = await getDecodedBuffer(filePath)
-    return buf.duration
-  } catch {
-    return new Promise((resolve) => {
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      audio.addEventListener('loadedmetadata', () => {
-        resolve(audio.duration)
-        URL.revokeObjectURL(url)
-      })
-      audio.addEventListener('error', () => {
-        resolve(0)
-        URL.revokeObjectURL(url)
-      })
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+    audio.addEventListener('loadedmetadata', () => {
+      resolve(audio.duration)
+      URL.revokeObjectURL(url)
     })
-  }
+    audio.addEventListener('error', () => {
+      resolve(0)
+      URL.revokeObjectURL(url)
+    })
+  })
 }
