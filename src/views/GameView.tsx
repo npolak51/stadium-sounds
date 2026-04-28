@@ -500,7 +500,9 @@ export default function GameView() {
                     onClick={() => handlePlaySoundEffect(a)}
                     disabled={!preloadReady}
                   >
-                    {a.soundEffectName || a.fileName.replace(/\.[^/.]+$/, '')}
+                    <span className="sound-btn-label">
+                      {a.soundEffectName || a.fileName.replace(/\.[^/.]+$/, '')}
+                    </span>
                     {isActive && <span className="playing-indicator">♪</span>}
                   </button>
                 )
