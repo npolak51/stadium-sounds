@@ -42,6 +42,9 @@ let fadeInInterval: ReturnType<typeof setInterval> | null = null
 let fadeOutInterval: ReturnType<typeof setInterval> | null = null
 let globalVolume = 1
 
+/** Fired once when playback reaches assignment end naturally (ended / segment end); not STOP. */
+let onNaturalPlaybackEnd: ((assignment: AudioAssignment) => void) | null = null
+
 /** Next seek position (seconds in file) for sound effects with `soundEffectSegmentResume`. */
 const segmentResumeCursorById = new Map<string, number>()
 /** Set when segment playback is ending at endTime (including fade-out to end); snapshot uses startTime instead of currentTime. */
@@ -234,12 +237,17 @@ function clearPlayback() {
     currentAudio.src = ''
     currentAudio = null
   }
+  onNaturalPlaybackEnd = null
   currentAssignment = null
   notify()
 }
 
-export async function play(assignment: AudioAssignment): Promise<void> {
+export async function play(
+  assignment: AudioAssignment,
+  options?: { onNaturalEnd?: (assignment: AudioAssignment) => void }
+): Promise<void> {
   stop(true)
+  onNaturalPlaybackEnd = options?.onNaturalEnd ?? null
   let blob = getBlobForPlay(assignment.filePath)
   if (!blob) {
     blob = await getAudioBlob(assignment.filePath) ?? null
@@ -275,9 +283,18 @@ export async function play(assignment: AudioAssignment): Promise<void> {
     }, stepInterval)
   }
 
+  let naturalCompletionHandled = false
   const handleEnd = () => {
-    URL.revokeObjectURL(url)
+    if (naturalCompletionHandled) return
+    naturalCompletionHandled = true
+    const snapshot = currentAssignment
+    const naturalCb = onNaturalPlaybackEnd
+    onNaturalPlaybackEnd = null
     clearPlayback()
+    URL.revokeObjectURL(url)
+    if (naturalCb && snapshot) {
+      naturalCb(snapshot)
+    }
   }
 
   audio.addEventListener('ended', handleEnd)

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -234,10 +234,60 @@ export default function GameView() {
 
   const [playError, setPlayError] = useState<string | null>(null)
 
+  const playlistSettingsRef = useRef({
+    playlistItems,
+    shuffleEnabled,
+    repeatMode
+  })
+  playlistSettingsRef.current = { playlistItems, shuffleEnabled, repeatMode }
+
+  const playAssignmentRef = useRef<(a: AudioAssignment) => Promise<void>>(async () => {})
+
+  const handlePlaylistNaturalEnd = useCallback((ended: AudioAssignment) => {
+    const { playlistItems: items, shuffleEnabled: shuffle, repeatMode: repeat } =
+      playlistSettingsRef.current
+    if (ended.purpose !== 'In-Game Playlist') return
+    const n = items.length
+    if (n === 0) return
+    const idx = items.findIndex(x => x.id === ended.id)
+    if (idx < 0) return
+
+    if (repeat === 'One') {
+      void playAssignmentRef.current(items[idx])
+      return
+    }
+
+    if (shuffle) {
+      if (n <= 1) {
+        setCurrentPlaylistIndex(0)
+        void playAssignmentRef.current(items[0])
+        return
+      }
+      let nextIdx = Math.floor(Math.random() * (n - 1))
+      if (nextIdx >= idx) nextIdx++
+      setCurrentPlaylistIndex(nextIdx)
+      void playAssignmentRef.current(items[nextIdx])
+      return
+    }
+
+    let nextIdx = idx + 1
+    if (nextIdx >= n) {
+      if (repeat === 'All') nextIdx = 0
+      else return
+    }
+    setCurrentPlaylistIndex(nextIdx)
+    void playAssignmentRef.current(items[nextIdx])
+  }, [])
+
   const playAssignment = useCallback(async (a: AudioAssignment) => {
     setPlayError(null)
     try {
-      await play(a)
+      await play(
+        a,
+        a.purpose === 'In-Game Playlist'
+          ? { onNaturalEnd: handlePlaylistNaturalEnd }
+          : undefined
+      )
       if (a.purpose === 'Player Music') {
         setCurrentPlayingPlayerId(a.player ?? null)
         setCurrentPlayingPitcherEntranceId(null)
@@ -263,7 +313,11 @@ export default function GameView() {
       console.error(e)
       setPlayError(e instanceof Error ? e.message : 'Playback failed')
     }
-  }, [])
+  }, [handlePlaylistNaturalEnd])
+
+  useEffect(() => {
+    playAssignmentRef.current = playAssignment
+  }, [playAssignment])
 
   const handlePlayPlayer = useCallback(
     (player: Player) => {
@@ -289,7 +343,9 @@ export default function GameView() {
   const handlePlayPlaylistSong = useCallback(
     (index: number) => {
       const item = playlistItems[index]
-      if (item) playAssignment(item)
+      if (!item) return
+      setCurrentPlaylistIndex(index)
+      void playAssignment(item)
     },
     [playlistItems, playAssignment]
   )
@@ -616,10 +672,7 @@ export default function GameView() {
               <button
                 key={item.id}
                 className={`playlist-track ${isActive ? 'active' : ''}`}
-                onClick={() => {
-                  setCurrentPlaylistIndex(i)
-                  handlePlayPlaylistSong(i)
-                }}
+                onClick={() => handlePlayPlaylistSong(i)}
                 disabled={!preloadReady}
               >
                 <span className="track-num">{i + 1}</span>
